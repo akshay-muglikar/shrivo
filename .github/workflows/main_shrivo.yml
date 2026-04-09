@@ -9,9 +9,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-
     steps:
       - uses: actions/checkout@v4
 
@@ -20,18 +17,19 @@ jobs:
         with:
           python-version: '3.11'
 
+      # We install locally just to ensure requirements.txt is valid
       - name: Install dependencies
         run: |
-          cd backend
-          python -m venv antenv
-          source antenv/bin/activate
-          pip install -r requirements.txt
+          pip install -r backend/requirements.txt
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          path: backend/*
+          # This takes everything INSIDE backend/ and puts it at the root of the artifact
+          path: backend/
+          # Ensure we don't upload the local venv if it exists
+          if-no-files-found: error
 
   deploy:
     runs-on: ubuntu-latest
@@ -45,6 +43,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
+          path: .
 
       - name: Azure Login
         uses: azure/login@v2
@@ -56,6 +55,7 @@ jobs:
       - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
-          app-name: shrivo
-          slot-name: Production
-          package: .   # ✅ IMPORTANT
+          app-name: 'shrivo'
+          slot-name: 'Production'
+          # Deploying the current directory (which now contains the backend contents)
+          package: .
