@@ -17,19 +17,17 @@ jobs:
         with:
           python-version: '3.11'
 
-      # We install locally just to ensure requirements.txt is valid
-      - name: Install dependencies
+      - name: Create Deployment Zip
         run: |
-          pip install -r backend/requirements.txt
+          cd backend
+          # We zip everything EXCEPT the virtual environment
+          zip -r ../release.zip . -x "antenv/*" "venv/*" "__pycache__/*"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: python-app
-          # This takes everything INSIDE backend/ and puts it at the root of the artifact
-          path: backend/
-          # Ensure we don't upload the local venv if it exists
-          if-no-files-found: error
+          path: release.zip
 
   deploy:
     runs-on: ubuntu-latest
@@ -43,7 +41,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: python-app
-          path: .
 
       - name: Azure Login
         uses: azure/login@v2
@@ -52,10 +49,10 @@ jobs:
           tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_5FAB1CE8EC43490885883F59EB3CABB5 }}
           subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_7ED691047D124FD5AA7945749FC15812 }}
 
-      - name: Deploy to Azure Web App
+      - name: 'Deploy to Azure Web App'
         uses: azure/webapps-deploy@v3
         with:
           app-name: 'shrivo'
           slot-name: 'Production'
-          # Deploying the current directory (which now contains the backend contents)
-          package: .
+          # Pointing directly to the zip file avoids the OneDeploy folder sync issues
+          package: release.zip
