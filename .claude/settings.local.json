@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npx shadcn@latest add input label card badge table separator --overwrite)",
+      "Bash(curl -s -X POST http://localhost:8000/api/v1/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"owner@shop.com\",\"password\":\"owner123\"}')",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('✓ list invoices: total=', d.get\\('total'\\)\\)\")",
+      "Bash(npx shadcn@latest add popover command --yes)"
+    ]
+  }
+}
