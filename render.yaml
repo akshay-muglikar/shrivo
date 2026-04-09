@@ -1,0 +1,52 @@
+# Exported from Render on 2026-04-09T12:12:52Z
+version: "1"
+projects:
+- name: My project
+  environments:
+  - name: Production
+    databases:
+    - name: inventory
+      databaseName: inventory_4s8v
+      user: akshay
+      plan: free
+      region: singapore
+      ipAllowList:
+      - source: 0.0.0.0/0
+        description: everywhere
+      postgresMajorVersion: "18"
+    services:
+    - type: web
+      name: inventory-backend
+      runtime: docker
+      plan: free
+      region: singapore
+      dockerContext: ./backend
+      dockerfilePath: ./backend/Dockerfile
+      healthCheckPath: /health
+      autoDeployTrigger: commit
+      envVars:
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        generateValue: true
+      - key: ENVIRONMENT
+        value: production
+      - key: ACCESS_TOKEN_EXPIRE_DAYS
+        value: "30"
+      - key: CORS_ORIGINS
+        sync: false
+    - type: web
+      name: inventory-frontend
+      runtime: static
+      plan: free
+      rootDir: ./frontend
+      buildCommand: npm ci && npm run build
+      staticPublishPath: ./dist
+      autoDeployTrigger: commit
+      routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
+      envVars:
+      - key: VITE_API_BASE_URL
+        sync: false
