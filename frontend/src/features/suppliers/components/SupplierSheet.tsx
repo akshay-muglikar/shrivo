@@ -17,6 +17,8 @@ import { createSupplier, updateSupplier, type Supplier } from "../api/suppliers.
 interface FormValues {
   name: string
   phone: string
+  email: string
+  address: string
   notes: string
 }
 
@@ -31,15 +33,21 @@ export function SupplierSheet({ open, onOpenChange, supplier }: Props) {
   const isEdit = !!supplier
 
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>({
-    defaultValues: { name: "", phone: "", notes: "" },
+    defaultValues: { name: "", phone: "", email: "", address: "", notes: "" },
   })
 
   useEffect(() => {
     if (open) {
       reset(
         supplier
-          ? { name: supplier.name, phone: supplier.phone ?? "", notes: supplier.notes ?? "" }
-          : { name: "", phone: "", notes: "" }
+          ? {
+              name: supplier.name,
+              phone: supplier.phone ?? "",
+              email: supplier.email ?? "",
+              address: supplier.address ?? "",
+              notes: supplier.notes ?? "",
+            }
+          : { name: "", phone: "", email: "", address: "", notes: "" }
       )
     }
   }, [open, supplier, reset])
@@ -49,6 +57,8 @@ export function SupplierSheet({ open, onOpenChange, supplier }: Props) {
       const payload = {
         name: values.name,
         phone: values.phone.trim() || null,
+        email: values.email.trim() || null,
+        address: values.address.trim() || null,
         notes: values.notes.trim() || null,
       }
       return isEdit
@@ -65,7 +75,7 @@ export function SupplierSheet({ open, onOpenChange, supplier }: Props) {
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
-      <SheetContent side="right" className="w-full max-w-none overflow-y-auto sm:!w-[min(56rem,50vw)]">
+      <SheetContent side="right" className="w-full max-w-none overflow-y-auto sm:!w-[min(40rem,50vw)]">
         <SheetHeader>
           <SheetTitle>{isEdit ? "Edit Supplier" : "Add Supplier"}</SheetTitle>
         </SheetHeader>
@@ -84,22 +94,25 @@ export function SupplierSheet({ open, onOpenChange, supplier }: Props) {
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="phone">Phone</Label>
+              <Input id="phone" placeholder="9876543210" {...register("phone")} />
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="email">Email</Label>
+              <Input id="email" type="email" placeholder="supplier@example.com" {...register("email")} />
+            </div>
+          </div>
+
           <div className="flex flex-col gap-1.5">
-            <Label htmlFor="phone">Phone</Label>
-            <Input
-              id="phone"
-              placeholder="e.g. 9876543210"
-              {...register("phone")}
-            />
+            <Label htmlFor="address">Address</Label>
+            <Input id="address" placeholder="Street, City, State" {...register("address")} />
           </div>
 
           <div className="flex flex-col gap-1.5">
             <Label htmlFor="notes">Notes</Label>
-            <Input
-              id="notes"
-              placeholder="Payment terms, contact person, etc."
-              {...register("notes")}
-            />
+            <Input id="notes" placeholder="Payment terms, contact person, etc." {...register("notes")} />
           </div>
 
           <SheetFooter className="px-0 pt-2">

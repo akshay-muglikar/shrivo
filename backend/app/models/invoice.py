@@ -29,6 +29,9 @@ class Invoice(Base):
     status: Mapped[str] = mapped_column(String(20), default=InvoiceStatus.PAID)
     payment_method: Mapped[str] = mapped_column(String(20), default="cash")
     subtotal: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    discount_type: Mapped[str | None] = mapped_column(String(10), nullable=True)  # "percent" | "flat"
+    discount_value: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
+    discount_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     tax_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=0)
     tax_amount: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)
     total: Mapped[Decimal] = mapped_column(Numeric(12, 2), default=0)

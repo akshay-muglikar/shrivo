@@ -58,6 +58,8 @@ export interface InvoiceCreate {
   customer_id?: string | null
   walk_in_customer_name?: string | null
   walk_in_customer_phone?: string | null
+  discount_type?: "percent" | "flat" | null
+  discount_value?: number
   tax_rate?: number
   payment_method?: string
   notes?: string | null

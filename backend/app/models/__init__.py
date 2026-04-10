@@ -8,6 +8,8 @@ from app.models.expense import Expense
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.support_ticket import SupportTicket
 from app.models.contact_lead import ContactLead
+from app.models.purchase_order import PurchaseOrder, PurchaseOrderItem
+from app.models.supplier_payment import SupplierPayment
 
 __all__ = [
 	"User",
@@ -21,4 +23,7 @@ __all__ = [
 	"InvoiceItem",
 	"SupportTicket",
 	"ContactLead",
+	"PurchaseOrder",
+	"PurchaseOrderItem",
+	"SupplierPayment",
 ]

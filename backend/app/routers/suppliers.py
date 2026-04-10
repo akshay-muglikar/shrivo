@@ -65,6 +65,14 @@ async def update_supplier(supplier_id: uuid.UUID, body: SupplierUpdate, db: Asyn
     return supplier
 
 
+@router.get("/{supplier_id}", response_model=SupplierRead)
+async def get_supplier(supplier_id: uuid.UUID, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
+    supplier = await db.get(Supplier, supplier_id)
+    if not supplier:
+        raise AppException(404, "Supplier not found")
+    return SupplierRead.model_validate(supplier)
+
+
 @router.delete("/{supplier_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_supplier(supplier_id: uuid.UUID, db: AsyncSession = Depends(get_db), _=Depends(get_current_user)):
     supplier = await db.get(Supplier, supplier_id)

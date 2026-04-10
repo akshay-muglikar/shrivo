@@ -4,6 +4,13 @@ import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { PaginationControls } from "@/components/pagination-controls"
 import { Input } from "@/components/ui/input"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
@@ -14,19 +21,30 @@ import { getProducts, stockIn } from "../api/products.api"
 import { currency } from "@/lib/formatters"
 import { ScanBarcode, Plus } from "lucide-react"
 
+const SORT_OPTIONS = [
+  { value: "name_asc", label: "Name A→Z" },
+  { value: "name_desc", label: "Name Z→A" },
+  { value: "stock_asc", label: "Stock: low first" },
+  { value: "stock_desc", label: "Stock: high first" },
+  { value: "price_asc", label: "Price: low first" },
+  { value: "price_desc", label: "Price: high first" },
+]
+
 export function ProductsPage() {
   const qc = useQueryClient()
   const [search, setSearch] = useState("")
   const [lowStock, setLowStock] = useState(false)
+  const [sortBy, setSortBy] = useState("name_asc")
   const [addOpen, setAddOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
 
   const { data, isLoading } = useQuery({
-    queryKey: ["products", search, lowStock, page, limit],
+    queryKey: ["products", search, lowStock, sortBy, page, limit],
     queryFn: () => getProducts({
       search: search || undefined,
       low_stock: lowStock || undefined,
+      sort_by: sortBy,
       page, limit,
     }).then((r) => r.data),
   })
@@ -59,7 +77,7 @@ export function ProductsPage() {
         </div>
 
         <TabsContent value="products" className="space-y-4">
-          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
             <Input
               placeholder="Search name or SKU…"
               value={search}
@@ -70,6 +88,20 @@ export function ProductsPage() {
               onClick={() => { setLowStock(!lowStock); setPage(1) }}>
               Low stock
             </Button>
+            <Select value={sortBy} onValueChange={(v) => {
+              if (!v) return
+              setSortBy(v)
+              setPage(1)
+            }}>
+              <SelectTrigger className="w-full sm:w-44 h-8 text-sm">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((o) => (
+                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <Card>

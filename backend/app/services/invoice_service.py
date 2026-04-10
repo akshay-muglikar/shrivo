@@ -8,6 +8,7 @@ from app.core.exceptions import AppException
 from app.models.invoice import Invoice, InvoiceItem
 from app.models.stock_movement import MovementType
 from app.repositories.invoice_repository import InvoiceRepository
+from app.repositories.product_repository import ProductRepository
 from app.schemas.invoice import InvoiceCreate, InvoiceUpdate
 from app.services import customer_service, product_service
 
@@ -61,11 +62,17 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
     repo = InvoiceRepository(db)
     invoice_number = await repo.next_invoice_number()
 
+    # Batch-fetch all products in one query
+    product_map = await ProductRepository(db).get_by_ids([item.product_id for item in data.items])
+    missing = [str(item.product_id) for item in data.items if item.product_id not in product_map]
+    if missing:
+        raise AppException(status_code=404, detail=f"Products not found: {', '.join(missing)}")
+
     subtotal = Decimal("0")
     built_items: list[InvoiceItem] = []
 
     for item_data in data.items:
-        product = await product_service.get_by_id(db, item_data.product_id)
+        product = product_map[item_data.product_id]
         if item_data.quantity <= 0:
             raise AppException(status_code=400, detail="Item quantity must be greater than zero")
         if item_data.unit_price <= 0:
@@ -82,8 +89,17 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
             )
         )
 
-    tax_amount = (subtotal * data.tax_rate / Decimal("100")).quantize(Decimal("0.01"))
-    total = subtotal + tax_amount
+    discount_value = data.discount_value or Decimal("0")
+    if data.discount_type == "percent":
+        discount_amount = (subtotal * discount_value / Decimal("100")).quantize(Decimal("0.01"))
+    elif data.discount_type == "flat":
+        discount_amount = min(discount_value, subtotal).quantize(Decimal("0.01"))
+    else:
+        discount_amount = Decimal("0")
+
+    taxable = subtotal - discount_amount
+    tax_amount = (taxable * data.tax_rate / Decimal("100")).quantize(Decimal("0.01"))
+    total = taxable + tax_amount
 
     invoice = Invoice(
         invoice_number=invoice_number,
@@ -93,6 +109,9 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
         status="paid",
         payment_method=data.payment_method,
         subtotal=subtotal,
+        discount_type=data.discount_type,
+        discount_value=discount_value,
+        discount_amount=discount_amount,
         tax_rate=data.tax_rate,
         tax_amount=tax_amount,
         total=total,
@@ -124,7 +143,20 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
 
 async def update(db: AsyncSession, invoice_id: uuid.UUID, data: InvoiceUpdate) -> Invoice:
     invoice = await get_by_id(db, invoice_id)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+
+    # Restore stock when cancelling a paid invoice
+    if update_data.get("status") == "cancelled" and invoice.status == "paid":
+        for item in invoice.items:
+            await product_service.adjust_stock(
+                db,
+                product_id=item.product_id,
+                delta=item.quantity,
+                movement_type=MovementType.RETURN,
+                notes=f"Cancelled invoice {invoice.invoice_number}",
+            )
+
+    for field, value in update_data.items():
         setattr(invoice, field, value)
     await db.flush()
     return await InvoiceRepository(db).get_by_id(invoice_id)

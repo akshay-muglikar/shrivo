@@ -17,8 +17,9 @@ async def get_all(
     low_stock: bool,
     offset: int,
     limit: int,
+    sort_by: str | None = None,
 ) -> tuple[list[Product], int]:
-    return await ProductRepository(db).get_all(search, category_id, low_stock, offset, limit)
+    return await ProductRepository(db).get_all(search, category_id, low_stock, offset, limit, sort_by)
 
 
 async def get_by_id(db: AsyncSession, product_id: uuid.UUID) -> Product:
@@ -58,7 +59,7 @@ async def adjust_stock(
     product_id: uuid.UUID,
     delta: int,
     movement_type: MovementType,
-    created_by_id: uuid.UUID,
+    created_by_id: uuid.UUID | None = None,
     reference_id: uuid.UUID | None = None,
     notes: str | None = None,
     new_cost_price: Decimal | None = None,

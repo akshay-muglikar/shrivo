@@ -26,11 +26,12 @@ async def list_products(
     search: str | None = Query(None),
     category_id: uuid.UUID | None = Query(None),
     low_stock: bool = Query(False),
+    sort_by: str | None = Query(None, pattern="^(name|stock|price)_(asc|desc)$"),
     page: PageParams = Depends(),
     db: AsyncSession = Depends(get_db),
     _=Depends(get_current_user),
 ):
-    items, total = await product_service.get_all(db, search, category_id, low_stock, page.offset, page.limit)
+    items, total = await product_service.get_all(db, search, category_id, low_stock, page.offset, page.limit, sort_by)
     return {"total": total, "page": page.page, "limit": page.limit, "items": [ProductRead.model_validate(p) for p in items]}
 
 

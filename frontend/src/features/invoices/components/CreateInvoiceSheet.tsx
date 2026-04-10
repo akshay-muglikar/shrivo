@@ -60,6 +60,8 @@ interface FormValues {
   walk_in_customer_name: string
   walk_in_customer_phone: string
   payment_method: string
+  discount_type: "none" | "percent" | "flat"
+  discount_value: string
   tax_rate: string
   notes: string
   items: LineItem[]
@@ -95,6 +97,8 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
       walk_in_customer_name: "",
       walk_in_customer_phone: "",
       payment_method: "cash",
+      discount_type: "none",
+      discount_value: "0",
       tax_rate: "0",
       notes: "",
       items: [{ product_id: "", quantity: "1", unit_price: "0" }],
@@ -106,13 +110,20 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
   const customerId = watch("customer_id")
   const isWalkIn = !customerId
   const taxRate = parseFloat(watch("tax_rate") || "0") || 0
+  const discountType = watch("discount_type")
+  const discountValue = parseFloat(watch("discount_value") || "0") || 0
 
   const subtotal = watchedItems.reduce(
     (sum, item) => sum + (parseFloat(item.unit_price) || 0) * (parseInt(item.quantity) || 0),
     0
   )
-  const taxAmount = (subtotal * taxRate) / 100
-  const total = subtotal + taxAmount
+  const discountAmount =
+    discountType === "percent" ? (subtotal * discountValue) / 100
+    : discountType === "flat" ? Math.min(discountValue, subtotal)
+    : 0
+  const taxable = subtotal - discountAmount
+  const taxAmount = (taxable * taxRate) / 100
+  const total = taxable + taxAmount
 
   const mutation = useMutation({
     mutationFn: (values: FormValues) =>
@@ -120,6 +131,8 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
         customer_id: values.customer_id || null,
         walk_in_customer_name: values.customer_id ? null : values.walk_in_customer_name.trim() || null,
         walk_in_customer_phone: values.customer_id ? null : values.walk_in_customer_phone.trim() || null,
+        discount_type: values.discount_type === "none" ? null : values.discount_type,
+        discount_value: parseFloat(values.discount_value) || 0,
         payment_method: values.payment_method,
         tax_rate: parseFloat(values.tax_rate) || 0,
         notes: values.notes || null,
@@ -441,8 +454,36 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
 
           <Separator />
 
-          {/* ── Tax & Notes ─────────────────────────────── */}
+          {/* ── Discount, Tax & Notes ───────────────────── */}
           <div className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Discount</Label>
+              <div className="flex gap-1.5">
+                <Select
+                  value={discountType}
+                  onValueChange={(v) => setValue("discount_type", v as "none" | "percent" | "flat")}
+                >
+                  <SelectTrigger className="w-24 shrink-0">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">None</SelectItem>
+                    <SelectItem value="percent">%</SelectItem>
+                    <SelectItem value="flat">₹ flat</SelectItem>
+                  </SelectContent>
+                </Select>
+                {discountType !== "none" && (
+                  <Input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    placeholder="0"
+                    {...register("discount_value")}
+                    className="flex-1"
+                  />
+                )}
+              </div>
+            </div>
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="tax_rate">Tax %</Label>
               <Input
@@ -455,10 +496,10 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
                 {...register("tax_rate")}
               />
             </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="notes">Notes</Label>
-              <Input id="notes" placeholder="Optional" {...register("notes")} />
-            </div>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="notes">Notes</Label>
+            <Input id="notes" placeholder="Optional" {...register("notes")} />
           </div>
 
           {/* ── Totals ──────────────────────────────────── */}
@@ -467,6 +508,14 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
               <span>Subtotal ({watchedItems.length} item{watchedItems.length !== 1 ? "s" : ""})</span>
               <span>{currency(subtotal)}</span>
             </div>
+            {discountAmount > 0 && (
+              <div className="flex justify-between text-green-600">
+                <span>
+                  Discount{discountType === "percent" ? ` (${discountValue}%)` : ""}
+                </span>
+                <span>−{currency(discountAmount)}</span>
+              </div>
+            )}
             {taxRate > 0 && (
               <div className="flex justify-between text-muted-foreground">
                 <span>Tax ({taxRate}%)</span>

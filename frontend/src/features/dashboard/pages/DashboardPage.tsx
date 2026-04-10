@@ -5,6 +5,10 @@ import {
   AlertTriangle,
   ArrowRight,
   BadgeIndianRupee,
+  ClipboardList,
+  HandCoins,
+  Layers,
+  ShoppingCart,
   TrendingDown,
   TrendingUp,
   Wallet,
@@ -46,12 +50,12 @@ function lastMonthRange(): { from: string; to: string } {
   return { from: toISO(firstOfLastMonth), to: toISO(lastOfLastMonth) }
 }
 
-// ── Preset definitions ─────────────────────────────────────────
-type Preset = "today" | "3days" | "last_month" | "custom"
+type Preset = "today" | "3days" | "7days" | "last_month" | "custom"
 
 const PRESETS: { value: Preset; label: string }[] = [
   { value: "today", label: "Today" },
   { value: "3days", label: "Last 3 days" },
+  { value: "7days", label: "Last 7 days" },
   { value: "last_month", label: "Last month" },
   { value: "custom", label: "Custom" },
 ]
@@ -60,14 +64,21 @@ function presetDates(preset: Preset, customFrom: string, customTo: string) {
   switch (preset) {
     case "today":      return { from: today(), to: today() }
     case "3days":      return { from: lastN(3), to: today() }
+    case "7days":      return { from: lastN(7), to: today() }
     case "last_month": return lastMonthRange()
     case "custom":     return { from: customFrom, to: customTo }
   }
 }
 
-// ── Misc helpers ───────────────────────────────────────────────
 const paymentLabel: Record<string, string> = {
   cash: "Cash", upi: "UPI", card: "Card", credit: "Credit",
+}
+
+const poStatusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
+  received: "default",
+  ordered: "secondary",
+  draft: "outline",
+  cancelled: "destructive",
 }
 
 function shortDate(iso: string) {
@@ -79,7 +90,7 @@ function StatCard({
   title, value, sub, icon: Icon, highlight,
 }: {
   title: string; value: string; sub?: string
-  icon: React.ElementType; highlight?: "positive" | "negative"
+  icon: React.ElementType; highlight?: "positive" | "negative" | "warning"
 }) {
   return (
     <Card>
@@ -90,6 +101,7 @@ function StatCard({
             <p className={`text-2xl font-bold tracking-tight truncate mt-0.5 ${
               highlight === "positive" ? "text-green-600"
               : highlight === "negative" ? "text-destructive"
+              : highlight === "warning" ? "text-amber-600"
               : ""
             }`}>
               {value}
@@ -144,8 +156,7 @@ export function DashboardPage() {
         <h2 className="text-lg font-semibold">Dashboard</h2>
 
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:flex-wrap">
-          {/* Preset buttons */}
-          <div className="grid grid-cols-2 overflow-hidden rounded-md border text-sm sm:flex">
+          <div className="grid grid-cols-3 overflow-hidden rounded-md border text-sm sm:flex">
             {PRESETS.map((p) => (
               <button
                 key={p.value}
@@ -154,14 +165,13 @@ export function DashboardPage() {
                   preset === p.value
                     ? "bg-primary text-primary-foreground"
                     : "bg-background text-muted-foreground hover:bg-muted"
-                } ${p.value !== "today" ? "border-l" : ""} ${p.value === "custom" ? "col-span-2 sm:col-span-1" : ""}`}
+                } ${p.value !== "today" ? "border-l" : ""}`}
               >
                 {p.label}
               </button>
             ))}
           </div>
 
-          {/* Custom date inputs */}
           {preset === "custom" && (
             <div className="grid grid-cols-1 gap-2 sm:flex sm:items-center sm:gap-1.5">
               <Input
@@ -185,10 +195,10 @@ export function DashboardPage() {
         </div>
       </div>
 
-      {/* ── Stat cards ────────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      {/* ── Stat cards — 2 cols mobile, 3/4 cols md, 4 cols xl then wrap ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         {isLoading ? (
-          Array.from({ length: 4 }).map((_, i) => <StatSkeleton key={i} />)
+          Array.from({ length: 7 }).map((_, i) => <StatSkeleton key={i} />)
         ) : (
           <>
             <StatCard
@@ -211,15 +221,34 @@ export function DashboardPage() {
               highlight={netPositive ? "positive" : "negative"}
             />
             <StatCard
-              title="Low Stock Items"
-              value={String(data?.low_stock_count ?? 0)}
-              sub="Products below threshold"
-              icon={AlertTriangle}
+              title="Purchases"
+              value={currency(data?.period_purchases ?? 0)}
+              sub={`Goods received · ${periodLabel}`}
+              icon={ShoppingCart}
+            />
+            <StatCard
+              title="Supplier Payable"
+              value={currency(data?.total_supplier_payable ?? 0)}
+              sub="Total outstanding"
+              icon={HandCoins}
               highlight={
-                (data?.low_stock_count ?? 0) === 0 ? undefined
-                : (data?.low_stock_count ?? 0) >= 5 ? "negative"
-                : "positive"
+                (data?.total_supplier_payable ?? 0) > 0 ? "warning" : undefined
               }
+            />
+            <StatCard
+              title="Pending POs"
+              value={String(data?.pending_po_count ?? 0)}
+              sub="Draft + ordered"
+              icon={ClipboardList}
+              highlight={
+                (data?.pending_po_count ?? 0) === 0 ? undefined : "warning"
+              }
+            />
+            <StatCard
+              title="Inventory Value"
+              value={currency(data?.stock_value ?? 0)}
+              sub="Stock at cost price"
+              icon={Layers}
             />
           </>
         )}
@@ -239,7 +268,6 @@ export function DashboardPage() {
             {isLoading ? (
               <Skeleton className="h-48 w-full" />
             ) : (data?.sales_trend ?? []).length <= 1 ? (
-              /* Single day — show a simple big number instead of a pointless 1-dot chart */
               <div className="h-48 flex flex-col items-center justify-center gap-1">
                 <p className="text-4xl font-bold">{currency(data?.period_revenue ?? 0)}</p>
                 <p className="text-sm text-muted-foreground">Total for {periodLabel}</p>
@@ -330,16 +358,53 @@ export function DashboardPage() {
         </Card>
       </div>
 
-      {/* ── Low stock ──────────────────────────────────── */}
-      {(isLoading || (data?.low_stock_count ?? 0) > 0) && (
-        <Card>
+      {/* ── Recent POs + Low stock ─────────────────────── */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        {/* Recent purchase orders */}
+        <Card className="lg:col-span-3">
+          <CardHeader className="pb-2 flex flex-row items-center justify-between">
+            <CardTitle className="text-sm font-semibold">Recent Purchase Orders</CardTitle>
+            <Link to="/app/suppliers" className="text-xs text-muted-foreground hover:text-foreground flex items-center gap-1">
+              Suppliers <ArrowRight className="size-3" />
+            </Link>
+          </CardHeader>
+          <CardContent className="p-0">
+            {isLoading ? (
+              <div className="p-4 space-y-3">
+                {Array.from({ length: 4 }).map((_, i) => <Skeleton key={i} className="h-10 w-full" />)}
+              </div>
+            ) : (data?.recent_pos.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground p-4">No purchase orders yet.</p>
+            ) : (
+              <div className="divide-y">
+                {data?.recent_pos.map((po) => (
+                  <div key={po.id} className="flex items-center justify-between gap-2 px-4 py-2.5">
+                    <div className="min-w-0">
+                      <p className="text-xs font-mono font-medium">{po.po_number}</p>
+                      <p className="text-xs text-muted-foreground truncate">{po.supplier_name}</p>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <Badge variant={poStatusVariant[po.status] ?? "secondary"} className="capitalize text-[11px]">
+                        {po.status}
+                      </Badge>
+                      <p className="text-xs font-semibold">{currency(po.total_amount)}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Low stock */}
+        <Card className="lg:col-span-2">
           <CardHeader className="pb-2 flex flex-row items-center justify-between">
             <div className="flex items-center gap-2">
               <AlertTriangle className="size-4 text-amber-500" />
               <CardTitle className="text-sm font-semibold">Low Stock</CardTitle>
-              {!isLoading && (
+              {!isLoading && (data?.low_stock_count ?? 0) > 0 && (
                 <Badge variant="secondary" className="text-amber-600 bg-amber-50 border-amber-200">
-                  {data?.low_stock_count} item{data?.low_stock_count !== 1 ? "s" : ""}
+                  {data?.low_stock_count}
                 </Badge>
               )}
             </div>
@@ -352,6 +417,8 @@ export function DashboardPage() {
               <div className="p-4 space-y-2">
                 {Array.from({ length: 3 }).map((_, i) => <Skeleton key={i} className="h-8 w-full" />)}
               </div>
+            ) : (data?.low_stock_products.length ?? 0) === 0 ? (
+              <p className="text-sm text-muted-foreground p-4">All products are well stocked.</p>
             ) : (
               <div className="divide-y">
                 {data?.low_stock_products.map((p) => (
@@ -374,7 +441,7 @@ export function DashboardPage() {
             )}
           </CardContent>
         </Card>
-      )}
+      </div>
     </div>
   )
 }

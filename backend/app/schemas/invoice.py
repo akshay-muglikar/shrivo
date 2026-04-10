@@ -17,6 +17,8 @@ class InvoiceCreate(BaseModel):
     customer_id: uuid.UUID | None = None
     walk_in_customer_name: str | None = None
     walk_in_customer_phone: str | None = None
+    discount_type: str | None = None  # "percent" | "flat" | None
+    discount_value: Decimal = Field(default=Decimal("0"), ge=0)
     tax_rate: Decimal = Field(default=Decimal("0"), ge=0, le=100)
     payment_method: str = "cash"
     notes: str | None = None
@@ -53,6 +55,9 @@ class InvoiceRead(BaseModel):
     status: str
     payment_method: str
     subtotal: Decimal
+    discount_type: str | None
+    discount_value: Decimal
+    discount_amount: Decimal
     tax_rate: Decimal
     tax_amount: Decimal
     total: Decimal
@@ -60,7 +65,7 @@ class InvoiceRead(BaseModel):
     created_at: datetime
     items: list[InvoiceItemRead]
 
-    @field_serializer("subtotal", "tax_rate", "tax_amount", "total")
+    @field_serializer("subtotal", "discount_value", "discount_amount", "tax_rate", "tax_amount", "total")
     def serialize_decimal(self, value: Decimal) -> str:
         return str(value)
 

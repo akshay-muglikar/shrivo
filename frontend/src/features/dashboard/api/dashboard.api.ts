@@ -14,6 +14,15 @@ export interface RecentInvoice {
   created_at: string
 }
 
+export interface RecentPO {
+  id: string
+  po_number: string
+  supplier_name: string
+  status: "draft" | "ordered" | "received" | "cancelled"
+  total_amount: number
+  created_at: string
+}
+
 export interface LowStockProduct {
   id: string
   name: string
@@ -28,10 +37,15 @@ export interface DashboardSummary {
   period_revenue: number
   period_invoice_count: number
   period_expenses: number
+  period_purchases: number
   net_profit: number
+  total_supplier_payable: number
+  pending_po_count: number
+  stock_value: number
   low_stock_count: number
   sales_trend: SalesTrendPoint[]
   recent_invoices: RecentInvoice[]
+  recent_pos: RecentPO[]
   low_stock_products: LowStockProduct[]
 }
 
