@@ -60,6 +60,7 @@ class InvoiceItem(Base):
         UUID(as_uuid=True), ForeignKey("products.id", ondelete="SET NULL"), nullable=True
     )
     product_name: Mapped[str] = mapped_column(String(200))  # snapshot at time of sale
+    hsn_code: Mapped[str | None] = mapped_column(String(8), nullable=True)  # snapshot
     quantity: Mapped[int] = mapped_column(Integer)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     line_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))

@@ -7,6 +7,8 @@ export interface Customer {
   phone: string | null
   email: string | null
   address: string | null
+  gstin: string | null
+  state: string | null
   created_at: string
 }
 
@@ -14,6 +16,7 @@ export interface InvoiceItem {
   id: string
   product_id: string | null
   product_name: string
+  hsn_code: string | null
   quantity: number
   unit_price: string
   line_total: string
@@ -28,6 +31,9 @@ export interface Invoice {
   status: string
   payment_method: string
   subtotal: string
+  discount_type: string | null
+  discount_value: string
+  discount_amount: string
   tax_rate: string
   tax_amount: string
   total: string

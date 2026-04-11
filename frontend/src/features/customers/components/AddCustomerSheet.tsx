@@ -8,12 +8,15 @@ import { Label } from "@/components/ui/label"
 import { Textarea } from "@/components/ui/textarea"
 import { Sheet, SheetContent, SheetFooter, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { createCustomer, type Customer, updateCustomer } from "../api/customers.api"
+import { getInvoiceSettings } from "@/features/invoices/utils/invoiceSettings"
 
 interface FormValues {
   name: string
   phone: string
   email: string
   address: string
+  gstin: string
+  state: string
 }
 
 interface Props {
@@ -24,6 +27,7 @@ interface Props {
 
 export function AddCustomerSheet({ open, onOpenChange, customer }: Props) {
   const qc = useQueryClient()
+  const gstEnabled = getInvoiceSettings().gstEnabled
   const { register, handleSubmit, reset, formState: { errors } } = useForm<FormValues>()
 
   useEffect(() => {
@@ -32,6 +36,8 @@ export function AddCustomerSheet({ open, onOpenChange, customer }: Props) {
       phone: customer?.phone ?? "",
       email: customer?.email ?? "",
       address: customer?.address ?? "",
+      gstin: customer?.gstin ?? "",
+      state: customer?.state ?? "",
     })
   }, [customer, reset, open])
 
@@ -42,6 +48,8 @@ export function AddCustomerSheet({ open, onOpenChange, customer }: Props) {
         phone: values.phone.trim() || null,
         email: values.email.trim() || null,
         address: values.address.trim() || null,
+        gstin: values.gstin.trim().toUpperCase() || null,
+        state: values.state.trim().toUpperCase() || null,
       }
       return customer ? updateCustomer(customer.id, payload) : createCustomer(payload)
     },
@@ -91,6 +99,34 @@ export function AddCustomerSheet({ open, onOpenChange, customer }: Props) {
             <Label htmlFor="customer_address">Address</Label>
             <Textarea id="customer_address" placeholder="Optional address" {...register("address")} />
           </div>
+
+          {gstEnabled && (
+            <div className="grid grid-cols-2 gap-3 rounded-lg border bg-muted/30 p-3">
+              <div className="col-span-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">GST Details (B2B)</p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="customer_gstin">GSTIN</Label>
+                <Input
+                  id="customer_gstin"
+                  placeholder="e.g. 27AABCS1234J1Z5"
+                  maxLength={15}
+                  className="font-mono uppercase"
+                  {...register("gstin")}
+                />
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="customer_state">State</Label>
+                <Input
+                  id="customer_state"
+                  placeholder="e.g. MH, DL, KA"
+                  maxLength={2}
+                  className="uppercase"
+                  {...register("state")}
+                />
+              </div>
+            </div>
+          )}
 
           <SheetFooter className="px-0 pt-2">
             <Button type="submit" disabled={mutation.isPending} className="w-full">

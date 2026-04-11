@@ -19,10 +19,14 @@ class ProductCreate(BaseModel):
     cost_price: Decimal = Decimal("0")
     selling_price: Decimal = Decimal("0")
     low_stock_threshold: int = 5
+    hsn_code: str | None = None
+    gst_rate: Decimal = Decimal("0")
+    price_includes_gst: bool = False
 
 
 class ProductUpdate(BaseModel):
     name: str | None = None
+    sku: str | None = None
     category_id: uuid.UUID | None = None
     supplier_id: uuid.UUID | None = None
     description: str | None = None
@@ -31,6 +35,9 @@ class ProductUpdate(BaseModel):
     selling_price: Decimal | None = None
     low_stock_threshold: int | None = None
     is_active: bool | None = None
+    hsn_code: str | None = None
+    gst_rate: Decimal | None = None
+    price_includes_gst: bool | None = None
 
 
 class ProductRead(BaseModel):
@@ -44,10 +51,13 @@ class ProductRead(BaseModel):
     current_stock: int
     low_stock_threshold: int
     is_active: bool
+    hsn_code: str | None
+    gst_rate: Decimal
+    price_includes_gst: bool
     category: CategoryRead | None
     supplier: SupplierRead | None
 
-    @field_serializer("cost_price", "selling_price")
+    @field_serializer("cost_price", "selling_price", "gst_rate")
     def serialize_decimal(self, value: Decimal) -> str:
         return str(value)
 

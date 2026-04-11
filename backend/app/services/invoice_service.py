@@ -83,6 +83,7 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
             InvoiceItem(
                 product_id=product.id,
                 product_name=product.name,
+                hsn_code=product.hsn_code,
                 quantity=item_data.quantity,
                 unit_price=item_data.unit_price,
                 line_total=line_total,

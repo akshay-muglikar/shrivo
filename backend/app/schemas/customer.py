@@ -9,6 +9,8 @@ class CustomerCreate(BaseModel):
     phone: str | None = None
     email: str | None = None
     address: str | None = None
+    gstin: str | None = None
+    state: str | None = None
 
 
 class CustomerUpdate(BaseModel):
@@ -16,6 +18,8 @@ class CustomerUpdate(BaseModel):
     phone: str | None = None
     email: str | None = None
     address: str | None = None
+    gstin: str | None = None
+    state: str | None = None
 
 
 class CustomerRead(BaseModel):
@@ -24,6 +28,8 @@ class CustomerRead(BaseModel):
     phone: str | None
     email: str | None
     address: str | None
+    gstin: str | None
+    state: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

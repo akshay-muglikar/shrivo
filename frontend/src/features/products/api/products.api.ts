@@ -28,6 +28,9 @@ export interface Product {
   current_stock: number
   low_stock_threshold: number
   is_active: boolean
+  hsn_code: string | null
+  gst_rate: string
+  price_includes_gst: boolean
   category: { id: string; name: string } | null
   supplier: { id: string; name: string } | null
 }

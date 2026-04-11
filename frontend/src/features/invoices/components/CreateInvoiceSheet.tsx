@@ -37,7 +37,8 @@ import {
 import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { getProducts } from "@/features/products/api/products.api"
-import { createInvoice, getCustomers } from "../api/invoices.api"
+import { createInvoice, getCustomers, type Invoice } from "../api/invoices.api"
+import { getInvoiceSettings } from "../utils/invoiceSettings"
 import { currency } from "@/lib/formatters"
 
 const WALK_IN_ID = "__walk_in__"
@@ -62,7 +63,6 @@ interface FormValues {
   payment_method: string
   discount_type: "none" | "percent" | "flat"
   discount_value: string
-  tax_rate: string
   notes: string
   items: LineItem[]
 }
@@ -70,9 +70,10 @@ interface FormValues {
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  onCreated?: (invoice: Invoice) => void
 }
 
-export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
+export function CreateInvoiceSheet({ open, onOpenChange, onCreated }: Props) {
   const qc = useQueryClient()
   const [customerComboOpen, setCustomerComboOpen] = useState(false)
   const [comboOpen, setComboOpen] = useState<Record<string, boolean>>({})
@@ -91,6 +92,8 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
 
   const availableProducts = products.items.filter((p) => p.is_active)
 
+  const gstEnabled = getInvoiceSettings().gstEnabled
+
   const { register, handleSubmit, setValue, watch, reset, control } = useForm<FormValues>({
     defaultValues: {
       customer_id: "",
@@ -99,7 +102,6 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
       payment_method: "cash",
       discount_type: "none",
       discount_value: "0",
-      tax_rate: "0",
       notes: "",
       items: [{ product_id: "", quantity: "1", unit_price: "0" }],
     },
@@ -109,7 +111,6 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
   const watchedItems = watch("items")
   const customerId = watch("customer_id")
   const isWalkIn = !customerId
-  const taxRate = parseFloat(watch("tax_rate") || "0") || 0
   const discountType = watch("discount_type")
   const discountValue = parseFloat(watch("discount_value") || "0") || 0
 
@@ -122,7 +123,21 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
     : discountType === "flat" ? Math.min(discountValue, subtotal)
     : 0
   const taxable = subtotal - discountAmount
-  const taxAmount = (taxable * taxRate) / 100
+
+  // Compute effective GST rate as weighted average of selected products' gst_rate
+  const effectiveTaxRate = (() => {
+    if (!gstEnabled || subtotal === 0) return 0
+    let weighted = 0
+    for (const item of watchedItems) {
+      const product = availableProducts.find((p) => p.id === item.product_id)
+      if (!product) continue
+      const lineTotal = (parseInt(item.quantity) || 0) * (parseFloat(item.unit_price) || 0)
+      weighted += (lineTotal / subtotal) * (parseFloat(product.gst_rate) || 0)
+    }
+    return weighted
+  })()
+
+  const taxAmount = (taxable * effectiveTaxRate) / 100
   const total = taxable + taxAmount
 
   const mutation = useMutation({
@@ -134,7 +149,7 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
         discount_type: values.discount_type === "none" ? null : values.discount_type,
         discount_value: parseFloat(values.discount_value) || 0,
         payment_method: values.payment_method,
-        tax_rate: parseFloat(values.tax_rate) || 0,
+        tax_rate: effectiveTaxRate,
         notes: values.notes || null,
         items: values.items.map((item) => ({
           product_id: item.product_id,
@@ -142,8 +157,7 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
           unit_price: parseFloat(item.unit_price),
         })),
       }),
-    onSuccess: () => {
-      toast.success("Invoice created")
+    onSuccess: (res) => {
       qc.invalidateQueries({ queryKey: ["invoices"] })
       qc.invalidateQueries({ queryKey: ["products"] })
       qc.invalidateQueries({ queryKey: ["invoice-products"] })
@@ -151,6 +165,7 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
       setComboOpen({})
       setCustomerComboOpen(false)
       onOpenChange(false)
+      onCreated?.(res.data)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
@@ -376,7 +391,12 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
                                   value={`${p.name} ${p.sku}`}
                                   onSelect={() => {
                                     setValue(`items.${idx}.product_id`, p.id)
-                                    setValue(`items.${idx}.unit_price`, p.selling_price)
+                                    // If price includes GST, back out to exclusive base price
+                                    const gstR = parseFloat(p.gst_rate) || 0
+                                    const unitPrice = (gstEnabled && p.price_includes_gst && gstR > 0)
+                                      ? (parseFloat(p.selling_price) / (1 + gstR / 100)).toFixed(2)
+                                      : p.selling_price
+                                    setValue(`items.${idx}.unit_price`, unitPrice)
                                     setCombo(field.id, false)
                                   }}
                                 >
@@ -384,6 +404,11 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
                                     <span className="truncate font-medium">{p.name}</span>
                                     <span className="text-xs text-muted-foreground">
                                       {p.sku} · {p.current_stock} in stock · {currency(p.selling_price)}
+                                      {gstEnabled && parseFloat(p.gst_rate) > 0 && (
+                                        <span className="ml-1 text-amber-600 dark:text-amber-400">
+                                          {p.price_includes_gst ? "(incl. GST)" : `+${p.gst_rate}% GST`}
+                                        </span>
+                                      )}
                                     </span>
                                   </div>
                                   <Check
@@ -432,7 +457,7 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
                     </Button>
                   </div>
 
-                  {/* Row footer: stock warning + line total */}
+                  {/* Row footer: stock warning + line total / GST breakdown */}
                   <div className="flex items-center justify-between px-0.5">
                     <div>
                       {overStock && (
@@ -441,11 +466,34 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
                         </span>
                       )}
                     </div>
-                    {selectedProduct && lineTotal > 0 && (
-                      <span className="text-xs text-muted-foreground">
-                        Line total: <span className="font-medium text-foreground">{currency(lineTotal)}</span>
-                      </span>
-                    )}
+                    {selectedProduct && lineTotal > 0 && (() => {
+                      const gstRate = parseFloat(selectedProduct.gst_rate) || 0
+                      if (gstEnabled && gstRate > 0) {
+                        const gstAmt = lineTotal * gstRate / 100
+                        const half = gstAmt / 2
+                        const halfRate = gstRate / 2
+                        const mrp = parseFloat(selectedProduct.selling_price)
+                        const qty = parseInt(watchedItems[idx]?.quantity) || 0
+                        return (
+                          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
+                            {selectedProduct.price_includes_gst && (
+                              <span className="text-muted-foreground/60">MRP {currency(mrp * qty)} →</span>
+                            )}
+                            <span>{currency(lineTotal)}</span>
+                            <span className="text-muted-foreground/40">+</span>
+                            <span className="text-amber-600 dark:text-amber-400">
+                              CGST {halfRate}% {currency(half)} · SGST {halfRate}% {currency(half)}
+                            </span>
+                            <span className="font-semibold text-foreground">= {currency(lineTotal + gstAmt)}</span>
+                          </div>
+                        )
+                      }
+                      return (
+                        <span className="text-xs text-muted-foreground">
+                          Total: <span className="font-medium text-foreground">{currency(lineTotal)}</span>
+                        </span>
+                      )
+                    })()}
                   </div>
                 </div>
               )
@@ -454,47 +502,33 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
 
           <Separator />
 
-          {/* ── Discount, Tax & Notes ───────────────────── */}
-          <div className="grid grid-cols-2 gap-3">
-            <div className="flex flex-col gap-1.5">
-              <Label>Discount</Label>
-              <div className="flex gap-1.5">
-                <Select
-                  value={discountType}
-                  onValueChange={(v) => setValue("discount_type", v as "none" | "percent" | "flat")}
-                >
-                  <SelectTrigger className="w-24 shrink-0">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">None</SelectItem>
-                    <SelectItem value="percent">%</SelectItem>
-                    <SelectItem value="flat">₹ flat</SelectItem>
-                  </SelectContent>
-                </Select>
-                {discountType !== "none" && (
-                  <Input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder="0"
-                    {...register("discount_value")}
-                    className="flex-1"
-                  />
-                )}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="tax_rate">Tax %</Label>
-              <Input
-                id="tax_rate"
-                type="number"
-                step="0.01"
-                min="0"
-                max="100"
-                placeholder="0"
-                {...register("tax_rate")}
-              />
+          {/* ── Discount & Notes ────────────────────────── */}
+          <div className="flex flex-col gap-1.5">
+            <Label>Discount</Label>
+            <div className="flex gap-1.5">
+              <Select
+                value={discountType}
+                onValueChange={(v) => setValue("discount_type", v as "none" | "percent" | "flat")}
+              >
+                <SelectTrigger className="w-24 shrink-0">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None</SelectItem>
+                  <SelectItem value="percent">%</SelectItem>
+                  <SelectItem value="flat">₹ flat</SelectItem>
+                </SelectContent>
+              </Select>
+              {discountType !== "none" && (
+                <Input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  placeholder="0"
+                  {...register("discount_value")}
+                  className="flex-1"
+                />
+              )}
             </div>
           </div>
           <div className="flex flex-col gap-1.5">
@@ -516,11 +550,24 @@ export function CreateInvoiceSheet({ open, onOpenChange }: Props) {
                 <span>−{currency(discountAmount)}</span>
               </div>
             )}
-            {taxRate > 0 && (
-              <div className="flex justify-between text-muted-foreground">
-                <span>Tax ({taxRate}%)</span>
-                <span>{currency(taxAmount)}</span>
-              </div>
+            {taxAmount > 0 && (
+              gstEnabled ? (
+                <>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>CGST ({(effectiveTaxRate / 2).toFixed(2)}%)</span>
+                    <span>{currency(taxAmount / 2)}</span>
+                  </div>
+                  <div className="flex justify-between text-muted-foreground">
+                    <span>SGST ({(effectiveTaxRate / 2).toFixed(2)}%)</span>
+                    <span>{currency(taxAmount / 2)}</span>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-between text-muted-foreground">
+                  <span>Tax ({effectiveTaxRate.toFixed(2)}%)</span>
+                  <span>{currency(taxAmount)}</span>
+                </div>
+              )
             )}
             <Separator />
             <div className="flex justify-between font-semibold text-base">

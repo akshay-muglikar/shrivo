@@ -35,6 +35,7 @@ class InvoiceItemRead(BaseModel):
     id: uuid.UUID
     product_id: uuid.UUID | None
     product_name: str
+    hsn_code: str | None
     quantity: int
     unit_price: Decimal
     line_total: Decimal

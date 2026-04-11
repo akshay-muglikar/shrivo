@@ -8,6 +8,8 @@ export interface Customer {
   phone: string | null
   email: string | null
   address: string | null
+  gstin: string | null
+  state: string | null
   created_at: string
 }
 
@@ -16,6 +18,8 @@ export interface CustomerCreate {
   phone?: string | null
   email?: string | null
   address?: string | null
+  gstin?: string | null
+  state?: string | null
 }
 
 export interface CustomerUpdate {
@@ -23,6 +27,8 @@ export interface CustomerUpdate {
   phone?: string | null
   email?: string | null
   address?: string | null
+  gstin?: string | null
+  state?: string | null
 }
 
 export const getCustomers = (params?: Record<string, unknown>) =>

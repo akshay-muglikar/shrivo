@@ -2,10 +2,11 @@ import { useEffect, useState } from "react"
 import { useForm } from "react-hook-form"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
-import { CheckCheck, FileText, Mail, Pencil, Plus, Ticket, Trash2, ShieldCheck, User as UserIcon } from "lucide-react"
+import { CheckCheck, FileText, IndianRupee, Mail, MessageCircle, Pencil, Plus, Ticket, Trash2, ShieldCheck, User as UserIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,6 +49,7 @@ import {
   type InvoiceTemplate,
   type InvoiceSize,
 } from "@/features/invoices/utils/invoiceSettings"
+import { DEFAULT_WA_TEMPLATE } from "@/features/invoices/utils/whatsappShare"
 
 // ── Shop info form ───────────────────────────────────────────────
 interface ShopInfoValues {
@@ -319,6 +321,9 @@ export function SettingsPage() {
 
   // Invoice settings (localStorage)
   const [invoiceSettings, setInvoiceSettings] = useState(getInvoiceSettings)
+  const [waTemplate, setWaTemplate] = useState(() => getInvoiceSettings().whatsappTemplate || DEFAULT_WA_TEMPLATE)
+  const [shopGstin, setShopGstin] = useState(() => getInvoiceSettings().shopGstin)
+  const [shopState, setShopState] = useState(() => getInvoiceSettings().shopState)
 
   function handleInvoiceSetting<K extends keyof typeof invoiceSettings>(
     key: K,
@@ -467,6 +472,164 @@ export function SettingsPage() {
               ))}
             </div>
           </div>
+        </CardContent>
+      </Card>
+
+      {/* WhatsApp sharing */}
+      <Card>
+        <CardHeader className="pb-3 flex flex-row items-center gap-2">
+          <div className="rounded-md bg-muted p-1.5 shrink-0">
+            <MessageCircle className="size-4 text-muted-foreground" />
+          </div>
+          <div>
+            <CardTitle className="text-sm font-semibold">WhatsApp Sharing</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Show "Send via WhatsApp" button after creating an invoice.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Enable WhatsApp button</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Show after invoice creation and in invoice actions.
+              </p>
+            </div>
+            <Switch
+              checked={invoiceSettings.whatsappEnabled}
+              onCheckedChange={(checked) => {
+                handleInvoiceSetting("whatsappEnabled", checked)
+              }}
+            />
+          </div>
+
+          {/* Message template */}
+          <div className="space-y-2">
+            <Label className="text-xs font-medium">Message Template</Label>
+            <Textarea
+              value={waTemplate}
+              onChange={(e) => setWaTemplate(e.target.value)}
+              rows={8}
+              className="font-mono text-xs resize-none"
+              placeholder={DEFAULT_WA_TEMPLATE}
+            />
+            <p className="text-[11px] text-muted-foreground">
+              Variables: <code className="bg-muted px-1 rounded">{"{customer_name}"}</code>{" "}
+              <code className="bg-muted px-1 rounded">{"{invoice_number}"}</code>{" "}
+              <code className="bg-muted px-1 rounded">{"{total}"}</code>{" "}
+              <code className="bg-muted px-1 rounded">{"{item_count}"}</code>{" "}
+              <code className="bg-muted px-1 rounded">{"{payment_method}"}</code>{" "}
+              <code className="bg-muted px-1 rounded">{"{shop_name}"}</code>{" "}
+              <code className="bg-muted px-1 rounded">{"{shop_phone}"}</code>
+            </p>
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                size="sm"
+                variant="outline"
+                onClick={() => {
+                  setWaTemplate(DEFAULT_WA_TEMPLATE)
+                  const next = { ...invoiceSettings, whatsappTemplate: "" }
+                  setInvoiceSettings(next)
+                  saveInvoiceSettings(next)
+                  toast.success("Template reset to default")
+                }}
+              >
+                Reset to default
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  const next = { ...invoiceSettings, whatsappTemplate: waTemplate === DEFAULT_WA_TEMPLATE ? "" : waTemplate }
+                  setInvoiceSettings(next)
+                  saveInvoiceSettings(next)
+                  toast.success("Template saved")
+                }}
+              >
+                Save template
+              </Button>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* GST settings */}
+      <Card>
+        <CardHeader className="pb-3 flex flex-row items-center gap-2">
+          <div className="rounded-md bg-muted p-1.5 shrink-0">
+            <IndianRupee className="size-4 text-muted-foreground" />
+          </div>
+          <div>
+            <CardTitle className="text-sm font-semibold">GST / Tax Invoice</CardTitle>
+            <p className="text-xs text-muted-foreground mt-0.5">
+              Enable GST-compliant invoice format with CGST/SGST breakdown.
+            </p>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-5">
+          {/* Enable toggle */}
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium">Enable GST Invoice</p>
+              <p className="text-xs text-muted-foreground mt-0.5">
+                Shows "TAX INVOICE" header and CGST + SGST breakdown on PDFs.
+              </p>
+            </div>
+            <Switch
+              checked={invoiceSettings.gstEnabled}
+              onCheckedChange={(checked) => handleInvoiceSetting("gstEnabled", checked)}
+            />
+          </div>
+
+          {invoiceSettings.gstEnabled && (
+            <div className="space-y-4 border-t pt-4">
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="shopGstin" className="text-xs">Your GSTIN</Label>
+                  <Input
+                    id="shopGstin"
+                    placeholder="e.g. 27AABCS1234J1Z5"
+                    maxLength={15}
+                    value={shopGstin}
+                    onChange={(e) => setShopGstin(e.target.value.toUpperCase())}
+                    className="font-mono uppercase"
+                  />
+                  <p className="text-[11px] text-muted-foreground">15-character GST identification number</p>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="shopState" className="text-xs">State (Place of Supply)</Label>
+                  <Input
+                    id="shopState"
+                    placeholder="e.g. MH, DL, KA, TN"
+                    maxLength={2}
+                    value={shopState}
+                    onChange={(e) => setShopState(e.target.value.toUpperCase())}
+                    className="uppercase"
+                  />
+                  <p className="text-[11px] text-muted-foreground">2-letter state code — determines CGST/SGST vs IGST</p>
+                </div>
+              </div>
+              <Button
+                type="button"
+                size="sm"
+                onClick={() => {
+                  const next = { ...invoiceSettings, shopGstin, shopState }
+                  setInvoiceSettings(next)
+                  saveInvoiceSettings(next)
+                  toast.success("GST settings saved")
+                }}
+              >
+                Save GST Info
+              </Button>
+              <div className="rounded-lg bg-muted/50 border p-3 text-[11px] text-muted-foreground space-y-1">
+                <p className="font-medium text-foreground text-xs">Phase 1 behaviour</p>
+                <p>Tax rate entered on the invoice is split 50/50 into CGST + SGST (intra-state). Full per-item HSN codes and IGST support come in Phase 2–3.</p>
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 

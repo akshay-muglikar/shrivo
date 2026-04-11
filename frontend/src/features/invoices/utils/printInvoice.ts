@@ -51,10 +51,19 @@ function thermalHtml(invoice: Invoice, width: "80mm" | "58mm", s: InvoiceSetting
     )
     .join("<tr><td colspan='3' style='padding:1px 0'></td></tr>")
 
-  const taxRow =
-    parseFloat(invoice.tax_rate) > 0
-      ? `<tr><td colspan="2">Tax (${invoice.tax_rate}%)</td><td style="text-align:right">${fmt(invoice.tax_amount)}</td></tr>`
-      : ""
+  const thermalTaxRate = parseFloat(invoice.tax_rate)
+  const thermalTaxAmt = parseFloat(invoice.tax_amount)
+  let taxRow = ""
+  if (thermalTaxRate > 0) {
+    if (s.gstEnabled) {
+      const half = thermalTaxRate / 2
+      const halfAmt = thermalTaxAmt / 2
+      taxRow = `<tr><td colspan="2">CGST (${half}%)</td><td style="text-align:right">${fmt(halfAmt)}</td></tr>
+                <tr><td colspan="2">SGST (${half}%)</td><td style="text-align:right">${fmt(halfAmt)}</td></tr>`
+    } else {
+      taxRow = `<tr><td colspan="2">Tax (${invoice.tax_rate}%)</td><td style="text-align:right">${fmt(invoice.tax_amount)}</td></tr>`
+    }
+  }
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -222,17 +231,20 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
   const isModern = s.template === "modern"
   const shopName = s.shopName || "Shop Manager"
   const shopTagline = s.shopTagline || "Inventory & Billing"
-  const shopMeta = [s.shopAddress, s.shopPhone, s.shopEmail].filter(Boolean)
+  const gstinLine = s.gstEnabled && s.shopGstin ? `GSTIN: ${s.shopGstin}` : null
+  const shopMeta = [s.shopAddress, s.shopPhone, s.shopEmail, gstinLine].filter(Boolean)
   const customerName =
     invoice.customer?.name ?? invoice.walk_in_customer_name ?? "Walk-in Customer"
   const customerPhone = invoice.customer?.phone ?? invoice.walk_in_customer_phone
+
+  const showHsn = s.gstEnabled && invoice.items.some((i) => i.hsn_code)
 
   const itemRows = invoice.items
     .map(
       (item, i) => `
     <tr>
       <td class="idx">${i + 1}</td>
-      <td>${item.product_name}</td>
+      <td>${item.product_name}${showHsn && item.hsn_code ? `<div style="font-size:10px;color:#888">HSN: ${item.hsn_code}</div>` : ""}</td>
       <td class="num">${item.quantity}</td>
       <td class="num">${fmt(item.unit_price)}</td>
       <td class="num">${fmt(item.line_total)}</td>
@@ -240,12 +252,24 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
     )
     .join("")
 
-  const taxRow =
-    parseFloat(invoice.tax_rate) > 0
-      ? `<tr class="summary-row">
-          <td colspan="4">Tax (${invoice.tax_rate}%)</td>
-          <td class="num">${fmt(invoice.tax_amount)}</td>
-        </tr>`
+  const taxRate = parseFloat(invoice.tax_rate)
+  const taxAmount = parseFloat(invoice.tax_amount)
+  let taxRows = ""
+  if (taxRate > 0) {
+    if (s.gstEnabled) {
+      const half = taxRate / 2
+      const halfAmt = taxAmount / 2
+      taxRows = `
+        <tr class="summary-row"><td colspan="4">CGST (${half}%)</td><td class="num">${fmt(halfAmt)}</td></tr>
+        <tr class="summary-row"><td colspan="4">SGST (${half}%)</td><td class="num">${fmt(halfAmt)}</td></tr>`
+    } else {
+      taxRows = `<tr class="summary-row"><td colspan="4">Tax (${invoice.tax_rate}%)</td><td class="num">${fmt(invoice.tax_amount)}</td></tr>`
+    }
+  }
+
+  const discountRow =
+    parseFloat(invoice.discount_amount ?? "0") > 0
+      ? `<tr class="summary-row"><td colspan="4" style="color:#16a34a">Discount</td><td class="num" style="color:#16a34a">−${fmt(invoice.discount_amount)}</td></tr>`
       : ""
 
   const tableSection = `
@@ -263,18 +287,21 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
         <tbody>
           ${itemRows}
           <tr class="summary-row"><td colspan="4">Subtotal</td><td class="num">${fmt(invoice.subtotal)}</td></tr>
-          ${taxRow}
+          ${discountRow}
+          ${taxRows}
           <tr class="summary-row total"><td colspan="4">Total</td><td class="num">${fmt(invoice.total)}</td></tr>
         </tbody>
       </table>
     </div>`
 
+  const customerGstin = invoice.customer?.gstin ?? null
   const partiesHtml = `
     <div class="parties">
       <div>
         <div class="party-label">Bill to</div>
         <div class="party-name">${customerName}</div>
         ${customerPhone ? `<div class="party-detail">${customerPhone}</div>` : ""}
+        ${s.gstEnabled && customerGstin ? `<div class="party-detail">GSTIN: ${customerGstin}</div>` : ""}
       </div>
       <div style="text-align:right">
         <div class="party-label">Payment</div>
@@ -292,11 +319,13 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
     : `${partiesHtml}${tableSection}${notesHtml}
        <div class="footer">Thank you for your business!</div>`
 
+  const docTitle = s.gstEnabled ? "TAX INVOICE" : "INVOICE"
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
-  <title>Invoice ${invoice.invoice_number}</title>
+  <title>${docTitle} ${invoice.invoice_number}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
     ${templateStyles(s.template, s.size)}
@@ -304,6 +333,7 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
   </style>
 </head>
 <body>
+  ${s.gstEnabled ? `<div style="text-align:center;font-weight:700;font-size:15px;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:10px;border-bottom:1px solid #e5e7eb;padding-bottom:8px">Tax Invoice</div>` : ""}
   <div class="header">
     <div>
       <div class="shop-name">${shopName}</div>

@@ -42,7 +42,14 @@ async def create(db: AsyncSession, data: ProductCreate) -> Product:
 
 async def update(db: AsyncSession, product_id: uuid.UUID, data: ProductUpdate) -> Product:
     product = await get_by_id(db, product_id)
-    for field, value in data.model_dump(exclude_unset=True).items():
+    update_data = data.model_dump(exclude_unset=True)
+
+    if update_data.get("sku") and update_data["sku"] != product.sku:
+        existing = await ProductRepository(db).get_by_sku(update_data["sku"])
+        if existing and existing.id != product.id:
+            raise AppException(status_code=409, detail=f"SKU '{update_data['sku']}' already exists")
+
+    for field, value in update_data.items():
         setattr(product, field, value)
     await db.flush()
     return await ProductRepository(db).get_by_id(product_id)

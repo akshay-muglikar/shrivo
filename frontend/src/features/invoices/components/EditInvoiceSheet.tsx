@@ -18,6 +18,7 @@ import { Separator } from "@/components/ui/separator"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { type Invoice, updateInvoice } from "../api/invoices.api"
 import { printInvoice, downloadInvoicePdf } from "../utils/printInvoice"
+import { WhatsAppShareButton } from "./WhatsAppShareButton"
 import { currency, date } from "@/lib/formatters"
 
 const PAYMENT_METHODS = [
@@ -103,6 +104,7 @@ export function EditInvoiceSheet({ invoice, onOpenChange }: Props) {
               <Badge variant={statusVariant[invoice.status] ?? "secondary"} className="text-xs">
                 {invoice.status}
               </Badge>
+              <WhatsAppShareButton invoice={invoice} variant="icon" />
               <Button
                 variant="outline"
                 size="icon"

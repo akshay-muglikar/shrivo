@@ -9,6 +9,11 @@ export interface InvoiceSettings {
   shopAddress: string
   shopPhone: string
   shopEmail: string
+  whatsappEnabled: boolean
+  whatsappTemplate: string
+  gstEnabled: boolean
+  shopGstin: string
+  shopState: string  // e.g. "MH" — determines CGST/SGST vs IGST
 }
 
 const STORAGE_KEY = "invoice_settings"
@@ -21,6 +26,11 @@ const DEFAULTS: InvoiceSettings = {
   shopAddress: "",
   shopPhone: "",
   shopEmail: "",
+  whatsappEnabled: true,
+  whatsappTemplate: "",  // empty = use DEFAULT_WA_TEMPLATE from whatsappShare.ts
+  gstEnabled: false,
+  shopGstin: "",
+  shopState: "",
 }
 
 export function getInvoiceSettings(): InvoiceSettings {

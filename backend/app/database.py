@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 
+from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -9,6 +10,7 @@ engine = create_async_engine(
     settings.DATABASE_URL,
     echo=settings.ENVIRONMENT == "development",
     pool_pre_ping=True,
+     poolclass=pool.NullPool,
     connect_args={"statement_cache_size": 0},
 )
 

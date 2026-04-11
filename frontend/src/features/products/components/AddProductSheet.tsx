@@ -1,3 +1,4 @@
+import { useEffect } from "react"
 import { useForm } from "react-hook-form"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import { toast } from "sonner"
@@ -18,7 +19,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import { createProduct, getCategories, getSuppliers } from "../api/products.api"
+import { Switch } from "@/components/ui/switch"
+import { createProduct, getCategories, getSuppliers, type Product, updateProduct } from "../api/products.api"
+import { getInvoiceSettings } from "@/features/invoices/utils/invoiceSettings"
 
 interface FormValues {
   name: string
@@ -30,11 +33,30 @@ interface FormValues {
   cost_price: string
   selling_price: string
   low_stock_threshold: string
+  hsn_code: string
+  gst_rate: string
+  price_includes_gst: boolean
 }
 
 interface Props {
   open: boolean
   onOpenChange: (open: boolean) => void
+  product?: Product | null
+}
+
+const DEFAULT_VALUES: FormValues = {
+  name: "",
+  sku: "",
+  description: "",
+  category_id: "",
+  supplier_id: "",
+  unit_of_measure: "piece",
+  cost_price: "0",
+  selling_price: "0",
+  low_stock_threshold: "5",
+  hsn_code: "",
+  gst_rate: "0",
+  price_includes_gst: false,
 }
 
 const UOM_OPTIONS = [
@@ -45,8 +67,10 @@ const UOM_OPTIONS = [
   { value: "meter", label: "Meter" },
 ]
 
-export function AddProductSheet({ open, onOpenChange }: Props) {
+export function AddProductSheet({ open, onOpenChange, product }: Props) {
   const qc = useQueryClient()
+  const gstEnabled = getInvoiceSettings().gstEnabled
+  const isEdit = !!product
 
   const { data: categories = [] } = useQuery({
     queryKey: ["categories"],
@@ -61,47 +85,90 @@ export function AddProductSheet({ open, onOpenChange }: Props) {
   })
 
   const { register, handleSubmit, setValue, watch, reset, formState: { errors } } = useForm<FormValues>({
-    defaultValues: {
-      unit_of_measure: "piece",
-      cost_price: "0",
-      selling_price: "0",
-      low_stock_threshold: "5",
-    },
+    defaultValues: DEFAULT_VALUES,
   })
+
+  useEffect(() => {
+    if (!open) return
+
+    if (product) {
+      reset({
+        name: product.name,
+        sku: product.sku,
+        description: product.description ?? "",
+        category_id: product.category?.id ?? "",
+        supplier_id: product.supplier?.id ?? "",
+        unit_of_measure: product.unit_of_measure,
+        cost_price: product.cost_price,
+        selling_price: product.selling_price,
+        low_stock_threshold: String(product.low_stock_threshold),
+        hsn_code: product.hsn_code ?? "",
+        gst_rate: product.gst_rate,
+        price_includes_gst: product.price_includes_gst,
+      })
+      return
+    }
+
+    reset(DEFAULT_VALUES)
+  }, [open, product, reset])
 
   const mutation = useMutation({
     mutationFn: (values: FormValues) =>
-      createProduct({
-        name: values.name,
-        sku: values.sku,
-        description: values.description || null,
-        category_id: values.category_id || null,
-        supplier_id: values.supplier_id || null,
-        unit_of_measure: values.unit_of_measure,
-        cost_price: parseFloat(values.cost_price) || 0,
-        selling_price: parseFloat(values.selling_price) || 0,
-        low_stock_threshold: parseInt(values.low_stock_threshold) || 5,
-      }),
+      isEdit && product
+        ? updateProduct(product.id, {
+            name: values.name,
+            sku: values.sku,
+            description: values.description || null,
+            category_id: values.category_id || null,
+            supplier_id: values.supplier_id || null,
+            unit_of_measure: values.unit_of_measure,
+            cost_price: parseFloat(values.cost_price) || 0,
+            selling_price: parseFloat(values.selling_price) || 0,
+            low_stock_threshold: parseInt(values.low_stock_threshold) || 5,
+            hsn_code: values.hsn_code.trim() || null,
+            gst_rate: parseFloat(values.gst_rate) || 0,
+            price_includes_gst: values.price_includes_gst,
+          })
+        : createProduct({
+            name: values.name,
+            sku: values.sku,
+            description: values.description || null,
+            category_id: values.category_id || null,
+            supplier_id: values.supplier_id || null,
+            unit_of_measure: values.unit_of_measure,
+            cost_price: parseFloat(values.cost_price) || 0,
+            selling_price: parseFloat(values.selling_price) || 0,
+            low_stock_threshold: parseInt(values.low_stock_threshold) || 5,
+            hsn_code: values.hsn_code.trim() || null,
+            gst_rate: parseFloat(values.gst_rate) || 0,
+            price_includes_gst: values.price_includes_gst,
+          }),
     onSuccess: () => {
-      toast.success("Product added")
+      toast.success(isEdit ? "Product updated" : "Product added")
       qc.invalidateQueries({ queryKey: ["products"] })
-      reset()
+      reset(DEFAULT_VALUES)
       onOpenChange(false)
     },
     onError: (err: unknown) => {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ?? "Failed to add product")
+      toast.error(msg ?? `Failed to ${isEdit ? "update" : "add"} product`)
     },
   })
 
   return (
-    <Sheet open={open} onOpenChange={onOpenChange}>
+    <Sheet
+      open={open}
+      onOpenChange={(nextOpen) => {
+        onOpenChange(nextOpen)
+        if (!nextOpen) reset(DEFAULT_VALUES)
+      }}
+    >
       <SheetContent
         side="right"
         className="w-full max-w-none overflow-y-auto border-l sm:!w-[min(56rem,50vw)]"
       >
         <SheetHeader>
-          <SheetTitle>Add Product</SheetTitle>
+          <SheetTitle>{isEdit ? "Edit Product" : "Add Product"}</SheetTitle>
         </SheetHeader>
 
         <form
@@ -218,6 +285,46 @@ export function AddProductSheet({ open, onOpenChange }: Props) {
               />
             </div>
 
+            {gstEnabled && (
+              <>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="hsn_code">HSN Code</Label>
+                  <Input
+                    id="hsn_code"
+                    placeholder="e.g. 2202"
+                    maxLength={8}
+                    {...register("hsn_code")}
+                  />
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <Label htmlFor="gst_rate">GST Rate %</Label>
+                  <Input
+                    id="gst_rate"
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    max="100"
+                    placeholder="0"
+                    {...register("gst_rate")}
+                  />
+                </div>
+                <div className="col-span-2 flex items-center justify-between gap-3 rounded-lg border bg-muted/30 p-3">
+                  <div>
+                    <p className="text-sm font-medium">Price includes GST</p>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      {watch("price_includes_gst")
+                        ? "Selling price already includes GST — base price is backed out on invoices"
+                        : "Selling price is before GST — GST is added on top on invoices"}
+                    </p>
+                  </div>
+                  <Switch
+                    checked={watch("price_includes_gst")}
+                    onCheckedChange={(v) => setValue("price_includes_gst", v)}
+                  />
+                </div>
+              </>
+            )}
+
             <div className="col-span-2 flex flex-col gap-1.5">
               <Label htmlFor="description">Description</Label>
               <Input
@@ -230,7 +337,7 @@ export function AddProductSheet({ open, onOpenChange }: Props) {
 
           <SheetFooter className="px-0 pt-2">
             <Button type="submit" disabled={mutation.isPending} className="w-full">
-              {mutation.isPending ? "Saving…" : "Save Product"}
+              {mutation.isPending ? "Saving…" : isEdit ? "Update Product" : "Save Product"}
             </Button>
           </SheetFooter>
         </form>
