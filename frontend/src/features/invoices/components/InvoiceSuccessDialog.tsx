@@ -57,7 +57,7 @@ export function InvoiceSuccessDialog({ invoice, open, onClose }: Props) {
 
   return (
     <Dialog open={open} onOpenChange={(v) => { if (!v) onClose() }}>
-      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <div className="flex items-center gap-3">
             <div className="rounded-full bg-green-100 dark:bg-green-900/40 p-2 shrink-0">
