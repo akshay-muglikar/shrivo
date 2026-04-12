@@ -36,11 +36,13 @@ class InvoiceItemRead(BaseModel):
     product_id: uuid.UUID | None
     product_name: str
     hsn_code: str | None
+    gst_rate: Decimal
+    price_includes_gst: bool
     quantity: int
     unit_price: Decimal
     line_total: Decimal
 
-    @field_serializer("unit_price", "line_total")
+    @field_serializer("gst_rate", "unit_price", "line_total")
     def serialize_decimal(self, value: Decimal) -> str:
         return str(value)
 

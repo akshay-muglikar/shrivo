@@ -17,6 +17,65 @@ const paymentLabel: Record<string, string> = {
   cash: "Cash", upi: "UPI", card: "Card", credit: "Credit",
 }
 
+function normalizeState(value: string | null | undefined) {
+  return value?.trim().toUpperCase() || ""
+}
+
+function isInterStateSale(invoice: Invoice, settings: InvoiceSettings) {
+  const shopState = normalizeState(settings.shopState)
+  const customerState = normalizeState(invoice.customer?.state)
+  return Boolean(shopState && customerState && shopState !== customerState)
+}
+
+function getGstRows(invoice: Invoice, settings: InvoiceSettings) {
+  const taxRate = parseFloat(invoice.tax_rate)
+  const taxAmount = parseFloat(invoice.tax_amount)
+
+  if (!settings.gstEnabled || taxRate <= 0 || taxAmount <= 0) {
+    return [] as Array<{ label: string; amount: number }>
+  }
+
+  if (isInterStateSale(invoice, settings)) {
+    return [{ label: `IGST (${taxRate}%)`, amount: taxAmount }]
+  }
+
+  const halfRate = taxRate / 2
+  const halfAmount = taxAmount / 2
+  return [
+    { label: `CGST (${halfRate}%)`, amount: halfAmount },
+    { label: `SGST (${halfRate}%)`, amount: halfAmount },
+  ]
+}
+
+function getItemGstRate(invoice: Invoice, item: Invoice["items"][number]) {
+  const itemRate = parseFloat(item.gst_rate ?? "0")
+  if (itemRate > 0) return itemRate
+  return parseFloat(invoice.tax_rate)
+}
+
+function getItemGstDetail(invoice: Invoice, item: Invoice["items"][number], settings: InvoiceSettings) {
+  if (!settings.gstEnabled) return null
+
+  const gstRate = getItemGstRate(invoice, item)
+  if (gstRate <= 0) return null
+
+  const taxableAmount = parseFloat(item.line_total)
+  const gstAmount = taxableAmount * gstRate / 100
+  const grossAmount = taxableAmount + gstAmount
+
+  if (isInterStateSale(invoice, settings)) {
+    return {
+      text: `${fmt(taxableAmount)} + IGST ${gstRate}% ${fmt(gstAmount)} = ${fmt(grossAmount)}`,
+    }
+  }
+
+  const halfRate = gstRate / 2
+  const halfAmount = gstAmount / 2
+  return {
+    text: `${fmt(taxableAmount)} + CGST ${halfRate}% ${fmt(halfAmount)} · SGST ${halfRate}% ${fmt(halfAmount)} = ${fmt(grossAmount)}`,
+  }
+}
+
 // ── @page rule ────────────────────────────────────────────────────
 function pageRule(size: InvoiceSize): string {
   if (size === "80mm") return `@page { size: 80mm auto; margin: 3mm 4mm; }`
@@ -33,37 +92,59 @@ function thermalHtml(invoice: Invoice, width: "80mm" | "58mm", s: InvoiceSetting
   const shopAddress = s.shopAddress
   const shopPhone = s.shopPhone
   const shopEmail = s.shopEmail
+  const shopGstin = s.gstEnabled ? s.shopGstin : ""
+  const shopState = s.gstEnabled ? s.shopState : ""
   const customerName =
     invoice.customer?.name ?? invoice.walk_in_customer_name ?? "Walk-in"
   const customerPhone = invoice.customer?.phone ?? invoice.walk_in_customer_phone
+  const customerGstin = s.gstEnabled ? invoice.customer?.gstin ?? "" : ""
+  const customerState = s.gstEnabled ? invoice.customer?.state ?? "" : ""
+  const gstRows = getGstRows(invoice, s)
+  const taxableValue = parseFloat(invoice.subtotal) - parseFloat(invoice.discount_amount ?? "0")
 
   const rows = invoice.items
     .map(
-      (item) => `
+      (item) => {
+        const itemGstDetail = getItemGstDetail(invoice, item, s)
+        return `
       <tr>
-        <td colspan="3" style="padding:1px 0 0">${item.product_name}</td>
+        <td colspan="3" style="padding:1px 0 0">${item.product_name}${s.gstEnabled && item.hsn_code ? `<div style="font-size:9px;color:#666">HSN: ${item.hsn_code}</div>` : ""}</td>
       </tr>
       <tr>
         <td style="color:#555">${item.quantity} × ${fmt(item.unit_price)}</td>
         <td></td>
         <td style="text-align:right;font-weight:600">${fmt(item.line_total)}</td>
-      </tr>`
+      </tr>
+      ${itemGstDetail ? `<tr><td colspan="3" style="font-size:9px;color:#92400e;padding:1px 0 0">${itemGstDetail.text}</td></tr>` : ""}`
+      }
     )
     .join("<tr><td colspan='3' style='padding:1px 0'></td></tr>")
 
-  const thermalTaxRate = parseFloat(invoice.tax_rate)
-  const thermalTaxAmt = parseFloat(invoice.tax_amount)
-  let taxRow = ""
-  if (thermalTaxRate > 0) {
-    if (s.gstEnabled) {
-      const half = thermalTaxRate / 2
-      const halfAmt = thermalTaxAmt / 2
-      taxRow = `<tr><td colspan="2">CGST (${half}%)</td><td style="text-align:right">${fmt(halfAmt)}</td></tr>
-                <tr><td colspan="2">SGST (${half}%)</td><td style="text-align:right">${fmt(halfAmt)}</td></tr>`
-    } else {
-      taxRow = `<tr><td colspan="2">Tax (${invoice.tax_rate}%)</td><td style="text-align:right">${fmt(invoice.tax_amount)}</td></tr>`
-    }
-  }
+  const taxRow = s.gstEnabled
+    ? gstRows
+      .map((row) => `<tr><td colspan="2">${row.label}</td><td style="text-align:right">${fmt(row.amount)}</td></tr>`)
+      .join("")
+    : parseFloat(invoice.tax_rate) > 0
+      ? `<tr><td colspan="2">Tax (${invoice.tax_rate}%)</td><td style="text-align:right">${fmt(invoice.tax_amount)}</td></tr>`
+      : ""
+
+  const shopGstHeaderBlock = s.gstEnabled
+    ? `${shopGstin ? `<div class="center" style="font-size:9px;color:#555">GSTIN: ${shopGstin}</div>` : ""}
+       ${shopState ? `<div class="center" style="font-size:9px;color:#555">State: ${shopState}</div>` : ""}`
+    : ""
+
+  const customerGstInfoBlock = s.gstEnabled
+    ? `${customerGstin ? `<div><span style="color:#555">Customer GSTIN: </span>${customerGstin}</div>` : ""}
+       ${customerState ? `<div><span style="color:#555">Place of Supply: </span>${customerState}</div>` : ""}`
+    : ""
+
+  const discountRow = parseFloat(invoice.discount_amount ?? "0") > 0
+    ? `<tr class="summary-row"><td colspan="2">Discount</td><td style="text-align:right">-${fmt(invoice.discount_amount)}</td></tr>`
+    : ""
+
+  const taxableRow = s.gstEnabled
+    ? `<tr class="summary-row"><td colspan="2">Taxable Value</td><td style="text-align:right">${fmt(taxableValue)}</td></tr>`
+    : ""
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -96,12 +177,14 @@ function thermalHtml(invoice: Invoice, width: "80mm" | "58mm", s: InvoiceSetting
   ${shopAddress ? `<div class="center" style="font-size:9px;color:#555">${shopAddress}</div>` : ""}
   ${shopPhone ? `<div class="center" style="font-size:9px;color:#555">${shopPhone}</div>` : ""}
   ${shopEmail ? `<div class="center" style="font-size:9px;color:#555;margin-bottom:6px">${shopEmail}</div>` : '<div style="margin-bottom:6px"></div>'}
+  ${shopGstHeaderBlock}
   <hr class="divider"/>
   <div style="margin-bottom:4px">
     <div><span style="color:#555">Invoice: </span><span class="bold">${invoice.invoice_number}</span></div>
     <div><span style="color:#555">Date: </span>${fmtDate(invoice.created_at)}</div>
     <div><span style="color:#555">Customer: </span>${customerName}${customerPhone ? ` (${customerPhone})` : ""}</div>
     <div><span style="color:#555">Payment: </span>${paymentLabel[invoice.payment_method] ?? invoice.payment_method}</div>
+    ${customerGstInfoBlock}
   </div>
   <hr class="divider"/>
   <table>
@@ -110,6 +193,8 @@ function thermalHtml(invoice: Invoice, width: "80mm" | "58mm", s: InvoiceSetting
   <hr class="divider"/>
   <table>
     <tr class="summary-row"><td colspan="2">Subtotal</td><td style="text-align:right">${fmt(invoice.subtotal)}</td></tr>
+    ${discountRow}
+    ${taxableRow}
     ${taxRow}
     <tr class="total-row"><td colspan="2">TOTAL</td><td style="text-align:right">${fmt(invoice.total)}</td></tr>
   </table>
@@ -232,45 +317,49 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
   const shopName = s.shopName || "Shop Manager"
   const shopTagline = s.shopTagline || "Inventory & Billing"
   const gstinLine = s.gstEnabled && s.shopGstin ? `GSTIN: ${s.shopGstin}` : null
-  const shopMeta = [s.shopAddress, s.shopPhone, s.shopEmail, gstinLine].filter(Boolean)
+  const shopStateLine = s.gstEnabled && s.shopState ? `State: ${s.shopState}` : null
+  const shopMeta = [s.shopAddress, s.shopPhone, s.shopEmail, gstinLine, shopStateLine].filter(Boolean)
   const customerName =
     invoice.customer?.name ?? invoice.walk_in_customer_name ?? "Walk-in Customer"
   const customerPhone = invoice.customer?.phone ?? invoice.walk_in_customer_phone
+  const customerState = invoice.customer?.state ?? null
+  const gstRows = getGstRows(invoice, s)
+  const taxableValue = parseFloat(invoice.subtotal) - parseFloat(invoice.discount_amount ?? "0")
 
   const showHsn = s.gstEnabled && invoice.items.some((i) => i.hsn_code)
 
   const itemRows = invoice.items
     .map(
-      (item, i) => `
+      (item, i) => {
+        const itemGstDetail = getItemGstDetail(invoice, item, s)
+        return `
     <tr>
       <td class="idx">${i + 1}</td>
-      <td>${item.product_name}${showHsn && item.hsn_code ? `<div style="font-size:10px;color:#888">HSN: ${item.hsn_code}</div>` : ""}</td>
+      <td>${item.product_name}${showHsn && item.hsn_code ? `<div style="font-size:10px;color:#888">HSN: ${item.hsn_code}</div>` : ""}${itemGstDetail ? `<div style="font-size:10px;color:#b45309;margin-top:2px">${itemGstDetail.text}</div>` : ""}</td>
       <td class="num">${item.quantity}</td>
       <td class="num">${fmt(item.unit_price)}</td>
       <td class="num">${fmt(item.line_total)}</td>
     </tr>`
+      }
     )
     .join("")
 
-  const taxRate = parseFloat(invoice.tax_rate)
-  const taxAmount = parseFloat(invoice.tax_amount)
-  let taxRows = ""
-  if (taxRate > 0) {
-    if (s.gstEnabled) {
-      const half = taxRate / 2
-      const halfAmt = taxAmount / 2
-      taxRows = `
-        <tr class="summary-row"><td colspan="4">CGST (${half}%)</td><td class="num">${fmt(halfAmt)}</td></tr>
-        <tr class="summary-row"><td colspan="4">SGST (${half}%)</td><td class="num">${fmt(halfAmt)}</td></tr>`
-    } else {
-      taxRows = `<tr class="summary-row"><td colspan="4">Tax (${invoice.tax_rate}%)</td><td class="num">${fmt(invoice.tax_amount)}</td></tr>`
-    }
-  }
+  const taxRows = s.gstEnabled
+    ? gstRows
+      .map((row) => `<tr class="summary-row"><td colspan="4">${row.label}</td><td class="num">${fmt(row.amount)}</td></tr>`)
+      .join("")
+    : parseFloat(invoice.tax_rate) > 0
+      ? `<tr class="summary-row"><td colspan="4">Tax (${invoice.tax_rate}%)</td><td class="num">${fmt(invoice.tax_amount)}</td></tr>`
+      : ""
 
   const discountRow =
     parseFloat(invoice.discount_amount ?? "0") > 0
       ? `<tr class="summary-row"><td colspan="4" style="color:#16a34a">Discount</td><td class="num" style="color:#16a34a">−${fmt(invoice.discount_amount)}</td></tr>`
       : ""
+
+  const taxableRow = s.gstEnabled
+    ? `<tr class="summary-row"><td colspan="4">Taxable Value</td><td class="num">${fmt(taxableValue)}</td></tr>`
+    : ""
 
   const tableSection = `
     <div class="summary-section">
@@ -288,6 +377,7 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
           ${itemRows}
           <tr class="summary-row"><td colspan="4">Subtotal</td><td class="num">${fmt(invoice.subtotal)}</td></tr>
           ${discountRow}
+          ${taxableRow}
           ${taxRows}
           <tr class="summary-row total"><td colspan="4">Total</td><td class="num">${fmt(invoice.total)}</td></tr>
         </tbody>
@@ -302,10 +392,12 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
         <div class="party-name">${customerName}</div>
         ${customerPhone ? `<div class="party-detail">${customerPhone}</div>` : ""}
         ${s.gstEnabled && customerGstin ? `<div class="party-detail">GSTIN: ${customerGstin}</div>` : ""}
+        ${s.gstEnabled && customerState ? `<div class="party-detail">State: ${customerState}</div>` : ""}
       </div>
       <div style="text-align:right">
         <div class="party-label">Payment</div>
         <div class="party-name">${paymentLabel[invoice.payment_method] ?? invoice.payment_method}</div>
+        ${s.gstEnabled ? `<div class="party-detail">Supply Type: ${isInterStateSale(invoice, s) ? "Inter-state" : "Intra-state"}</div>` : ""}
       </div>
     </div>`
 

@@ -19,6 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { type Invoice, updateInvoice } from "../api/invoices.api"
 import { printInvoice, downloadInvoicePdf } from "../utils/printInvoice"
 import { WhatsAppShareButton } from "./WhatsAppShareButton"
+import { getInvoiceSettings } from "../utils/invoiceSettings"
 import { currency, date } from "@/lib/formatters"
 
 const PAYMENT_METHODS = [

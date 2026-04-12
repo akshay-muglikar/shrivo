@@ -67,8 +67,8 @@ async def update_invoice(
     invoice_id: uuid.UUID,
     body: InvoiceUpdate,
     db: AsyncSession = Depends(get_db),
-    _=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
 ):
     async with session_transaction(db):
-        invoice = await invoice_service.update(db, invoice_id, body)
+        invoice = await invoice_service.update(db, invoice_id, body, current_user.id)
     return InvoiceRead.model_validate(invoice)

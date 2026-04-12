@@ -84,6 +84,8 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
                 product_id=product.id,
                 product_name=product.name,
                 hsn_code=product.hsn_code,
+                gst_rate=product.gst_rate,
+                price_includes_gst=product.price_includes_gst,
                 quantity=item_data.quantity,
                 unit_price=item_data.unit_price,
                 line_total=line_total,
@@ -142,7 +144,7 @@ async def create(db: AsyncSession, data: InvoiceCreate, created_by_id: uuid.UUID
     return await repo.get_by_id(invoice.id)
 
 
-async def update(db: AsyncSession, invoice_id: uuid.UUID, data: InvoiceUpdate) -> Invoice:
+async def update(db: AsyncSession, invoice_id: uuid.UUID, data: InvoiceUpdate, updated_by_id: uuid.UUID) -> Invoice:
     invoice = await get_by_id(db, invoice_id)
     update_data = data.model_dump(exclude_unset=True)
 
@@ -154,6 +156,7 @@ async def update(db: AsyncSession, invoice_id: uuid.UUID, data: InvoiceUpdate) -
                 product_id=item.product_id,
                 delta=item.quantity,
                 movement_type=MovementType.RETURN,
+                created_by_id=updated_by_id,
                 notes=f"Cancelled invoice {invoice.invoice_number}",
             )
 

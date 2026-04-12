@@ -3,7 +3,7 @@ import uuid
 from datetime import datetime
 from decimal import Decimal
 
-from sqlalchemy import DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -61,6 +61,8 @@ class InvoiceItem(Base):
     )
     product_name: Mapped[str] = mapped_column(String(200))  # snapshot at time of sale
     hsn_code: Mapped[str | None] = mapped_column(String(8), nullable=True)  # snapshot
+    gst_rate: Mapped[Decimal] = mapped_column(Numeric(5, 2), default=Decimal("0"))
+    price_includes_gst: Mapped[bool] = mapped_column(Boolean, default=False)
     quantity: Mapped[int] = mapped_column(Integer)
     unit_price: Mapped[Decimal] = mapped_column(Numeric(12, 2))
     line_total: Mapped[Decimal] = mapped_column(Numeric(12, 2))

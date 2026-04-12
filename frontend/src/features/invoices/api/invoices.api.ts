@@ -17,6 +17,8 @@ export interface InvoiceItem {
   product_id: string | null
   product_name: string
   hsn_code: string | null
+  gst_rate: string
+  price_includes_gst: boolean
   quantity: number
   unit_price: string
   line_total: string

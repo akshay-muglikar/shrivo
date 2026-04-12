@@ -1,5 +1,5 @@
 import type { Invoice } from "../api/invoices.api"
-import type { InvoiceSettings } from "./invoiceSettings"
+import { type InvoiceSettings, type InvoiceSize } from "./invoiceSettings"
 import { buildInvoiceHtml } from "./printInvoice"
 
 // ── Message template ──────────────────────────────────────────────
@@ -38,6 +38,29 @@ export function buildWhatsAppMessage(invoice: Invoice, settings: InvoiceSettings
     .replace(/\{shop_phone\}/g, settings.shopPhone || "")
 }
 
+const CSS_DPI = 96
+const MM_PER_INCH = 25.4
+
+function mmToPx(mm: number) {
+  return Math.round((mm * CSS_DPI) / MM_PER_INCH)
+}
+
+function getPdfPageSpec(size: InvoiceSize) {
+  switch (size) {
+    case "A5":
+      return { iframeWidthPx: mmToPx(148), pdfWidthMm: 148, minHeightMm: 210 }
+    case "Letter":
+      return { iframeWidthPx: mmToPx(216), pdfWidthMm: 216, minHeightMm: 279 }
+    case "80mm":
+      return { iframeWidthPx: mmToPx(80), pdfWidthMm: 80, minHeightMm: 0 }
+    case "58mm":
+      return { iframeWidthPx: mmToPx(58), pdfWidthMm: 58, minHeightMm: 0 }
+    case "A4":
+    default:
+      return { iframeWidthPx: mmToPx(210), pdfWidthMm: 210, minHeightMm: 297 }
+  }
+}
+
 // ── PDF blob generation (lazy-loads jspdf + html2canvas) ──────────
 
 export async function generateInvoicePdfBlob(
@@ -50,11 +73,12 @@ export async function generateInvoicePdfBlob(
   ])
 
   const htmlString = buildInvoiceHtml(invoice, settings)
+  const pageSpec = getPdfPageSpec(settings.size)
 
   // Render in a hidden iframe to preserve full <head> styles
   const iframe = document.createElement("iframe")
   iframe.style.cssText =
-    "position:fixed;left:-9999px;top:0;width:794px;height:1px;border:none;visibility:hidden;"
+    `position:fixed;left:-9999px;top:0;width:${pageSpec.iframeWidthPx}px;height:1px;border:none;visibility:hidden;`
   document.body.appendChild(iframe)
 
   await new Promise<void>((resolve) => {
@@ -78,13 +102,13 @@ export async function generateInvoicePdfBlob(
     })
 
     const imgData = canvas.toDataURL("image/jpeg", 0.92)
-    const pdfWidthMm = 210 // A4
+    const pdfWidthMm = pageSpec.pdfWidthMm
     const pdfHeightMm = (canvas.height * pdfWidthMm) / canvas.width
 
     const pdf = new jsPDF({
       orientation: "portrait",
       unit: "mm",
-      format: [pdfWidthMm, Math.max(pdfHeightMm, 297)], // at least A4 height
+      format: [pdfWidthMm, Math.max(pdfHeightMm, pageSpec.minHeightMm)],
     })
     pdf.addImage(imgData, "JPEG", 0, 0, pdfWidthMm, pdfHeightMm)
 
