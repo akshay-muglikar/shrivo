@@ -72,7 +72,7 @@ function BatchSelector({
 }: {
   productId: string
   value: string
-  onChange: (batchId: string) => void
+  onChange: (batchId: string | null) => void
 }) {
   const { data: batches } = useQuery({
     queryKey: ["product-batches", productId],
@@ -134,7 +134,7 @@ interface FormValues {
   discount_value: string
   notes: string
   is_gst_invoice: boolean
-  place_of_supply: string
+  place_of_supply: string | null
   items: LineItem[]
 }
 
@@ -575,7 +575,7 @@ export function CreateInvoiceSheet({ open, onOpenChange, onCreated, quickAddRequ
                         <BatchSelector
                           productId={selectedProduct.id}
                           value={watchedItems[idx]?.batch_id ?? ""}
-                          onChange={(v) => setValue(`items.${idx}.batch_id`, v)}
+                          onChange={(v) => setValue(`items.${idx}.batch_id`, v ?? "")}
                         />
                       </div>
                       {selectedProduct.hsn_code && (

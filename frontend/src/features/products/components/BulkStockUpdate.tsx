@@ -36,7 +36,7 @@ export function BulkStockUpdate() {
 
   const stockInMutation = useMutation({
     mutationFn: ({ id, quantity }: { id: string; quantity: number }) =>
-      stockIn(id, quantity),
+      stockIn(id, { quantity }),
     onSuccess: (_, vars) => {
       const entry: ScanEntry = {
         id: crypto.randomUUID(),

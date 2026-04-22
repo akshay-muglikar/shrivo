@@ -54,7 +54,7 @@ function BatchSelector({
 }: {
   productId: string
   value: string
-  onChange: (batchId: string) => void
+  onChange: (batchId: string | null) => void
 }) {
   const { data: batches } = useQuery({
     queryKey: ["product-batches", productId],
@@ -279,7 +279,7 @@ export function CreateSupplierReturnSheet({ open, onOpenChange, supplier }: Prop
                         <BatchSelector
                           productId={watchedItems[idx]?.product_id || ""}
                           value={watchedItems[idx]?.batch_id || ""}
-                          onChange={(batchId) => setValue(`items.${idx}.batch_id`, batchId)}
+                          onChange={(batchId) => setValue(`items.${idx}.batch_id`, batchId ?? "")}
                         />
                       </div>
 
