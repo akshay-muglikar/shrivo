@@ -13,8 +13,53 @@ const fmt = (v: number | string) =>
 const fmtDate = (v: string) =>
   new Date(v).toLocaleDateString("en-IN", { day: "numeric", month: "long", year: "numeric" })
 
+const fmtShortDate = (v: string) =>
+  new Date(v).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })
+
+function batchMeta(item: { batch_number: string | null; expiry_date: string | null }): string {
+  const parts: string[] = []
+  if (item.batch_number) parts.push(`Batch: ${item.batch_number}`)
+  if (item.expiry_date) parts.push(`Exp: ${fmtShortDate(item.expiry_date)}`)
+  return parts.join(" · ")
+}
+
 const paymentLabel: Record<string, string> = {
   cash: "Cash", upi: "UPI", card: "Card", credit: "Credit",
+}
+
+// ── Amount in words (Indian numbering) ───────────────────────────
+function amountInWords(amount: number): string {
+  const ones = [
+    "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+    "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+    "Seventeen", "Eighteen", "Nineteen",
+  ]
+  const tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+
+  function belowThousand(n: number): string {
+    if (n === 0) return ""
+    if (n < 20) return ones[n]
+    if (n < 100) return tens[Math.floor(n / 10)] + (n % 10 ? " " + ones[n % 10] : "")
+    return ones[Math.floor(n / 100)] + " Hundred" + (n % 100 ? " " + belowThousand(n % 100) : "")
+  }
+
+  function toWords(n: number): string {
+    if (n === 0) return "Zero"
+    let result = ""
+    if (n >= 10_000_000) { result += belowThousand(Math.floor(n / 10_000_000)) + " Crore "; n %= 10_000_000 }
+    if (n >= 100_000)    { result += belowThousand(Math.floor(n / 100_000)) + " Lakh "; n %= 100_000 }
+    if (n >= 1_000)      { result += belowThousand(Math.floor(n / 1_000)) + " Thousand "; n %= 1_000 }
+    if (n > 0)             result += belowThousand(n)
+    return result.trim()
+  }
+
+  const safeAmount = Number.isFinite(amount) ? Math.max(0, amount) : 0
+  const totalPaise = Math.round(safeAmount * 100)
+  const rupees = Math.floor(totalPaise / 100)
+  const paise = totalPaise % 100
+  let words = toWords(rupees) + " Rupees"
+  if (paise > 0) words += " and " + toWords(paise) + " Paise"
+  return words + " Only"
 }
 
 function normalizeState(value: string | null | undefined) {
@@ -28,17 +73,35 @@ function isInterStateSale(invoice: Invoice, settings: InvoiceSettings) {
 }
 
 function getGstRows(invoice: Invoice, settings: InvoiceSettings) {
+  if (!settings.gstEnabled) return [] as Array<{ label: string; amount: number }>
+
+  // Phase 3: use snapshotted totals when available
+  if (invoice.is_gst_invoice) {
+    const totalCgst = parseFloat(invoice.total_cgst)
+    const totalSgst = parseFloat(invoice.total_sgst)
+    const totalIgst = parseFloat(invoice.total_igst)
+
+    if (invoice.supply_type === "inter" && totalIgst > 0) {
+      const igstRate = parseFloat(invoice.tax_rate)
+      return [{ label: `IGST (${igstRate}%)`, amount: totalIgst }]
+    }
+    if (totalCgst > 0 || totalSgst > 0) {
+      const halfRate = parseFloat(invoice.tax_rate) / 2
+      return [
+        { label: `CGST (${halfRate}%)`, amount: totalCgst },
+        { label: `SGST (${halfRate}%)`, amount: totalSgst },
+      ]
+    }
+  }
+
+  // Phase 1/2 fallback: compute from tax_rate
   const taxRate = parseFloat(invoice.tax_rate)
   const taxAmount = parseFloat(invoice.tax_amount)
-
-  if (!settings.gstEnabled || taxRate <= 0 || taxAmount <= 0) {
-    return [] as Array<{ label: string; amount: number }>
-  }
+  if (taxRate <= 0 || taxAmount <= 0) return []
 
   if (isInterStateSale(invoice, settings)) {
     return [{ label: `IGST (${taxRate}%)`, amount: taxAmount }]
   }
-
   const halfRate = taxRate / 2
   const halfAmount = taxAmount / 2
   return [
@@ -56,6 +119,26 @@ function getItemGstRate(invoice: Invoice, item: Invoice["items"][number]) {
 function getItemGstDetail(invoice: Invoice, item: Invoice["items"][number], settings: InvoiceSettings) {
   if (!settings.gstEnabled) return null
 
+  // Phase 3: use snapshotted per-item amounts
+  if (invoice.is_gst_invoice) {
+    const cgstAmt = parseFloat(item.cgst_amount)
+    const sgstAmt = parseFloat(item.sgst_amount)
+    const igstAmt = parseFloat(item.igst_amount)
+    const cgstRate = parseFloat(item.cgst_rate)
+    const igstRate = parseFloat(item.igst_rate)
+
+    if (invoice.supply_type === "inter" && igstAmt > 0) {
+      const taxable = parseFloat(item.line_total) - igstAmt
+      return { text: `Taxable: ${fmt(taxable)} + IGST ${igstRate}% = ${fmt(igstAmt)}` }
+    }
+    if (cgstAmt > 0 || sgstAmt > 0) {
+      const taxable = parseFloat(item.line_total) - cgstAmt - sgstAmt
+      return { text: `Taxable: ${fmt(taxable)} + CGST ${cgstRate}% ${fmt(cgstAmt)} + SGST ${cgstRate}% ${fmt(sgstAmt)}` }
+    }
+    return null
+  }
+
+  // Phase 1/2 fallback: compute dynamically
   const gstRate = getItemGstRate(invoice, item)
   if (gstRate <= 0) return null
 
@@ -97,8 +180,8 @@ function thermalHtml(invoice: Invoice, width: "80mm" | "58mm", s: InvoiceSetting
   const customerName =
     invoice.customer?.name ?? invoice.walk_in_customer_name ?? "Walk-in"
   const customerPhone = invoice.customer?.phone ?? invoice.walk_in_customer_phone
-  const customerGstin = s.gstEnabled ? invoice.customer?.gstin ?? "" : ""
-  const customerState = s.gstEnabled ? invoice.customer?.state ?? "" : ""
+  const customerGstin = s.gstEnabled ? (invoice.is_gst_invoice ? invoice.buyer_gstin ?? "" : invoice.customer?.gstin ?? "") : ""
+  const customerState = s.gstEnabled ? (invoice.is_gst_invoice ? invoice.place_of_supply ?? "" : invoice.customer?.state ?? "") : ""
   const gstRows = getGstRows(invoice, s)
   const taxableValue = parseFloat(invoice.subtotal) - parseFloat(invoice.discount_amount ?? "0")
 
@@ -106,14 +189,21 @@ function thermalHtml(invoice: Invoice, width: "80mm" | "58mm", s: InvoiceSetting
     .map(
       (item) => {
         const itemGstDetail = getItemGstDetail(invoice, item, s)
+        const batch = batchMeta(item)
+        const rateNum = parseFloat(item.unit_price)
+        const qty = item.quantity
+        const lineTotal = rateNum * qty
+        const gstR = getItemGstRate(invoice, item)
+        const lineTaxAmount = s.gstEnabled && gstR > 0 ? (lineTotal * gstR) / 100 : 0
+        const lineAmount = lineTotal + lineTaxAmount
         return `
       <tr>
-        <td colspan="3" style="padding:1px 0 0">${item.product_name}${s.gstEnabled && item.hsn_code ? `<div style="font-size:9px;color:#666">HSN: ${item.hsn_code}</div>` : ""}</td>
+        <td colspan="3" style="padding:1px 0 0">${item.product_name}${s.gstEnabled && item.hsn_code ? `<div style="font-size:9px;color:#666">HSN: ${item.hsn_code}</div>` : ""}${batch ? `<div style="font-size:9px;color:#666">${batch}</div>` : ""}</td>
       </tr>
       <tr>
-        <td style="color:#555">${item.quantity} × ${fmt(item.unit_price)}</td>
+        <td style="color:#555">${qty} × ${fmt(rateNum)}</td>
         <td></td>
-        <td style="text-align:right;font-weight:600">${fmt(item.line_total)}</td>
+        <td style="text-align:right;font-weight:600">${fmt(lineAmount)}</td>
       </tr>
       ${itemGstDetail ? `<tr><td colspan="3" style="font-size:9px;color:#92400e;padding:1px 0 0">${itemGstDetail.text}</td></tr>` : ""}`
       }
@@ -237,8 +327,9 @@ function templateStyles(t: InvoiceTemplate, size: InvoiceSize): string {
     tbody td { padding: 8px 10px; }
     td.idx { color: #9ca3af; width: 24px; }
     td.num, th.num { text-align: right; }
-    .summary-row td { padding: 7px 10px; color: #555; }
-    .summary-row.total td { font-size: ${base + 2}px; font-weight: 700; color: #111; background: #f9fafb; border-top: 2px solid #111; padding: 9px 10px; }
+    td.mono { font-family: monospace; }
+    .summary-row td { padding: 7px 10px; color: #555; text-align: right; }
+    .summary-row.total td { font-size: ${base + 2}px; font-weight: 700; color: #111; background: #f9fafb; border-top: 2px solid #111; padding: 9px 10px; text-align: right; }
     .payment-info { font-size: ${base - 1}px; color: #666; margin-bottom: 28px; }
     .payment-info span { font-weight: 600; color: #111; }
     .footer { border-top: 1px solid #e5e7eb; padding-top: 14px; font-size: ${base - 2}px; color: #9ca3af; text-align: center; }
@@ -270,8 +361,9 @@ function templateStyles(t: InvoiceTemplate, size: InvoiceSize): string {
     tbody td { padding: 9px 12px; }
     td.idx { color: #cbd5e1; width: 24px; }
     td.num, th.num { text-align: right; }
-    .summary-row td { padding: 7px 12px; color: #64748b; background: #f8fafc; }
-    .summary-row.total td { font-size: ${base + 2}px; font-weight: 700; color: #fff; background: #1e293b; padding: 10px 12px; }
+    td.mono { font-family: monospace; }
+    .summary-row td { padding: 7px 12px; color: #64748b; background: #f8fafc; text-align: right; }
+    .summary-row.total td { font-size: ${base + 2}px; font-weight: 700; color: #fff; background: #1e293b; padding: 10px 12px; text-align: right; }
     .payment-info { font-size: ${base - 1}px; color: #64748b; margin-bottom: 28px; }
     .payment-info span { font-weight: 600; color: #0f172a; }
     .footer { border-top: 1px solid #e2e8f0; padding-top: 14px; font-size: ${base - 2}px; color: #94a3b8; text-align: center; margin: 0 ${small ? "24px" : "40px"} ${small ? "20px" : "32px"}; }
@@ -303,8 +395,9 @@ function templateStyles(t: InvoiceTemplate, size: InvoiceSize): string {
     tbody td { padding: 8px 8px; }
     td.idx { color: #bbb; width: 24px; }
     td.num, th.num { text-align: right; }
-    .summary-row td { padding: 6px 8px; color: #555; }
-    .summary-row.total td { font-size: ${base + 1}px; font-weight: 700; color: #111; border-top: 1px solid #222; padding: 8px 8px; }
+    td.mono { font-family: monospace; }
+    .summary-row td { padding: 6px 8px; color: #555; text-align: right; }
+    .summary-row.total td { font-size: ${base + 1}px; font-weight: 700; color: #111; border-top: 1px solid #222; padding: 8px 8px; text-align: right; }
     .payment-info { font-size: ${base - 1}px; color: #777; margin-bottom: 28px; }
     .payment-info span { font-weight: 600; color: #333; }
     .footer { padding-top: 14px; font-size: ${base - 2}px; color: #bbb; text-align: center; font-style: italic; }
@@ -323,81 +416,100 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
     invoice.customer?.name ?? invoice.walk_in_customer_name ?? "Walk-in Customer"
   const customerPhone = invoice.customer?.phone ?? invoice.walk_in_customer_phone
   const customerState = invoice.customer?.state ?? null
-  const gstRows = getGstRows(invoice, s)
-  const taxableValue = parseFloat(invoice.subtotal) - parseFloat(invoice.discount_amount ?? "0")
 
-  const showHsn = s.gstEnabled && invoice.items.some((i) => i.hsn_code)
+  const showMrp = invoice.items.some((i) => i.mrp !== null && i.mrp !== undefined)
+  // columns: # | Item | Batch No | Expiry | HSN | Qty | MRP* | Disc* | Rate | Tax % | Amount
+  // MRP and Disc columns only rendered when at least one item has mrp
+  const colSpan = showMrp ? 10 : 8
 
   const itemRows = invoice.items
     .map(
       (item, i) => {
         const itemGstDetail = getItemGstDetail(invoice, item, s)
+        const mrpNum = item.mrp !== null && item.mrp !== undefined ? parseFloat(item.mrp) : null
+        const rateNum = parseFloat(item.unit_price)
+        const qty = item.quantity
+        const gstR = parseFloat(item.gst_rate) || 0
+        const discountReferencePrice = (mrpNum !== null && item.price_includes_gst && gstR > 0)
+          ? mrpNum / (1 + gstR / 100)
+          : mrpNum
+        const discPerUnit = discountReferencePrice !== null ? discountReferencePrice - rateNum : null
+        const lineTotal = rateNum * qty
+        const effectiveGstRate = getItemGstRate(invoice, item)
+        const lineTaxAmount = s.gstEnabled && effectiveGstRate > 0 ? (lineTotal * effectiveGstRate) / 100 : 0
+        const lineAmount = lineTotal + lineTaxAmount
+        const gstSubRow = itemGstDetail
+          ? `<tr><td></td><td colspan="${colSpan - 1}" style="padding:0 10px 5px;font-size:10px;color:#b45309">${itemGstDetail.text}</td></tr>`
+          : ""
         return `
     <tr>
       <td class="idx">${i + 1}</td>
-      <td>${item.product_name}${showHsn && item.hsn_code ? `<div style="font-size:10px;color:#888">HSN: ${item.hsn_code}</div>` : ""}${itemGstDetail ? `<div style="font-size:10px;color:#b45309;margin-top:2px">${itemGstDetail.text}</div>` : ""}</td>
-      <td class="num">${item.quantity}</td>
-      <td class="num">${fmt(item.unit_price)}</td>
-      <td class="num">${fmt(item.line_total)}</td>
-    </tr>`
+      <td>${item.product_name}</td>
+      <td class="mono" style="font-size:11px">${item.batch_number ?? "—"}</td>
+      <td style="font-size:11px">${item.expiry_date ? fmtShortDate(item.expiry_date) : "—"}</td>
+      <td class="mono" style="font-size:11px">${item.hsn_code ?? "—"}</td>
+      <td class="num">${qty}</td>
+      ${showMrp ? `<td class="num" style="color:#6b7280">${mrpNum !== null ? fmt(mrpNum) : "—"}</td>` : ""}
+      ${showMrp ? `<td class="num" style="color:#16a34a">${discPerUnit !== null && discPerUnit > 0.005 ? `−${fmt(discPerUnit)}` : "—"}</td>` : ""}
+      <td class="num">${fmt(rateNum)}</td>
+      <td class="num">${gstR > 0 ? `${fmt(gstR)}%` : "—"}</td>
+      <td class="num">${fmt(lineAmount)}</td>
+    </tr>${gstSubRow}`
       }
     )
     .join("")
 
-  const taxRows = s.gstEnabled
-    ? gstRows
-      .map((row) => `<tr class="summary-row"><td colspan="4">${row.label}</td><td class="num">${fmt(row.amount)}</td></tr>`)
-      .join("")
-    : parseFloat(invoice.tax_rate) > 0
-      ? `<tr class="summary-row"><td colspan="4">Tax (${invoice.tax_rate}%)</td><td class="num">${fmt(invoice.tax_amount)}</td></tr>`
-      : ""
-
   const discountRow =
     parseFloat(invoice.discount_amount ?? "0") > 0
-      ? `<tr class="summary-row"><td colspan="4" style="color:#16a34a">Discount</td><td class="num" style="color:#16a34a">−${fmt(invoice.discount_amount)}</td></tr>`
+      ? `<tr class="summary-row"><td colspan="${colSpan - 1}" style="color:#16a34a">Discount</td><td class="num" style="color:#16a34a">−${fmt(invoice.discount_amount)}</td></tr>`
       : ""
-
-  const taxableRow = s.gstEnabled
-    ? `<tr class="summary-row"><td colspan="4">Taxable Value</td><td class="num">${fmt(taxableValue)}</td></tr>`
-    : ""
 
   const tableSection = `
     <div class="summary-section">
       <table>
         <thead>
           <tr>
-            <th style="width:24px">#</th>
+            <th style="width:20px">#</th>
             <th>Item</th>
-            <th class="num" style="width:50px">Qty</th>
-            <th class="num" style="width:100px">Rate</th>
-            <th class="num" style="width:110px">Amount</th>
+            <th style="width:80px">Batch No</th>
+            <th style="width:70px">Expiry</th>
+            <th style="width:60px">HSN/SAC</th>
+            <th class="num" style="width:40px">Qty</th>
+            ${showMrp ? `<th class="num" style="width:80px">MRP</th>` : ""}
+            ${showMrp ? `<th class="num" style="width:70px">Disc</th>` : ""}
+            <th class="num" style="width:85px">Rate</th>
+            <th class="num" style="width:60px">Tax %</th>
+            <th class="num" style="width:90px">Amount</th>
           </tr>
         </thead>
         <tbody>
           ${itemRows}
-          <tr class="summary-row"><td colspan="4">Subtotal</td><td class="num">${fmt(invoice.subtotal)}</td></tr>
           ${discountRow}
-          ${taxableRow}
-          ${taxRows}
-          <tr class="summary-row total"><td colspan="4">Total</td><td class="num">${fmt(invoice.total)}</td></tr>
+          <tr class="summary-row total"><td colspan="${colSpan - 1}">Total</td><td class="num">${fmt(invoice.total)}</td></tr>
         </tbody>
       </table>
     </div>`
 
-  const customerGstin = invoice.customer?.gstin ?? null
+  // Use snapshotted GST data when is_gst_invoice, else fall back to customer's current data
+  const displayBuyerGstin = invoice.is_gst_invoice ? invoice.buyer_gstin : (invoice.customer?.gstin ?? null)
+  const displayCustomerState = invoice.is_gst_invoice ? invoice.place_of_supply : customerState
+  const displaySupplyType = invoice.is_gst_invoice
+    ? (invoice.supply_type === "inter" ? "Inter-state (IGST)" : "Intra-state (CGST+SGST)")
+    : (isInterStateSale(invoice, s) ? "Inter-state" : "Intra-state")
+
   const partiesHtml = `
     <div class="parties">
       <div>
         <div class="party-label">Bill to</div>
         <div class="party-name">${customerName}</div>
         ${customerPhone ? `<div class="party-detail">${customerPhone}</div>` : ""}
-        ${s.gstEnabled && customerGstin ? `<div class="party-detail">GSTIN: ${customerGstin}</div>` : ""}
-        ${s.gstEnabled && customerState ? `<div class="party-detail">State: ${customerState}</div>` : ""}
+        ${s.gstEnabled && displayBuyerGstin ? `<div class="party-detail">GSTIN: ${displayBuyerGstin}</div>` : ""}
+        ${s.gstEnabled && displayCustomerState ? `<div class="party-detail">Place of Supply: ${displayCustomerState}</div>` : ""}
       </div>
       <div style="text-align:right">
         <div class="party-label">Payment</div>
         <div class="party-name">${paymentLabel[invoice.payment_method] ?? invoice.payment_method}</div>
-        ${s.gstEnabled ? `<div class="party-detail">Supply Type: ${isInterStateSale(invoice, s) ? "Inter-state" : "Intra-state"}</div>` : ""}
+        ${s.gstEnabled ? `<div class="party-detail">Supply Type: ${displaySupplyType}</div>` : ""}
       </div>
     </div>`
 
@@ -405,10 +517,14 @@ function buildFullPageHtml(invoice: Invoice, s: InvoiceSettings): string {
     ? `<div class="payment-info" style="margin-bottom:12px">Notes: <span>${invoice.notes}</span></div>`
     : ""
 
+  const amtInWordsHtml = `<div class="payment-info" style="margin-bottom:16px">
+    Amount in words: <span>${amountInWords(parseFloat(invoice.total))}</span>
+  </div>`
+
   const bodyContent = isModern
-    ? `<div class="body-pad">${partiesHtml}${tableSection}${notesHtml}</div>
+    ? `<div class="body-pad">${partiesHtml}${tableSection}${amtInWordsHtml}${notesHtml}</div>
        <div class="footer">Thank you for your business!</div>`
-    : `${partiesHtml}${tableSection}${notesHtml}
+    : `${partiesHtml}${tableSection}${amtInWordsHtml}${notesHtml}
        <div class="footer">Thank you for your business!</div>`
 
   const docTitle = s.gstEnabled ? "TAX INVOICE" : "INVOICE"

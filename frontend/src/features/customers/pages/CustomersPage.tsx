@@ -1,6 +1,6 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Edit, Eye, Plus } from "lucide-react"
+import { Edit, Plus } from "lucide-react"
 import { PaginationControls } from "@/components/pagination-controls"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -131,7 +131,11 @@ export function CustomersPage() {
                   <TableRow><TableCell colSpan={6} className="py-8 text-center text-muted-foreground">Loading…</TableCell></TableRow>
                 )}
                 {data?.items.map((customer) => (
-                  <TableRow key={customer.id}>
+                  <TableRow
+                    key={customer.id}
+                    className="cursor-pointer"
+                    onClick={() => setHistoryCustomer(customer)}
+                  >
                     <TableCell>
                       <div className="font-medium">{customer.name}</div>
                       <div className="text-xs text-muted-foreground sm:hidden">{customer.phone ?? "—"}</div>
@@ -144,12 +148,12 @@ export function CustomersPage() {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="icon" className="size-7"
-                          onClick={() => { setEditingCustomer(customer); setCreateOpen(true) }}>
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setEditingCustomer(customer)
+                            setCreateOpen(true)
+                          }}>
                           <Edit className="size-3.5" />
-                        </Button>
-                        <Button variant="ghost" size="icon" className="size-7"
-                          onClick={() => setHistoryCustomer(customer)}>
-                          <Eye className="size-3.5" />
                         </Button>
                       </div>
                     </TableCell>

@@ -8,7 +8,7 @@ from app.core.pagination import PageParams
 from app.database import get_db, session_transaction
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.schemas.invoice import InvoiceCreate, InvoiceListItem, InvoiceRead, InvoiceUpdate
+from app.schemas.invoice import InvoiceCreate, InvoiceListItem, InvoiceRead, InvoiceReturnCreate, InvoiceReturnRead, InvoiceUpdate
 from app.services import invoice_service
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -72,3 +72,25 @@ async def update_invoice(
     async with session_transaction(db):
         invoice = await invoice_service.update(db, invoice_id, body, current_user.id)
     return InvoiceRead.model_validate(invoice)
+
+
+@router.get("/{invoice_id}/returns", response_model=list[InvoiceReturnRead])
+async def get_invoice_returns(
+    invoice_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    returns = await invoice_service.get_returns(db, invoice_id)
+    return [InvoiceReturnRead.model_validate(r) for r in returns]
+
+
+@router.post("/{invoice_id}/return", response_model=InvoiceReturnRead, status_code=status.HTTP_201_CREATED)
+async def return_invoice_items(
+    invoice_id: uuid.UUID,
+    body: InvoiceReturnCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    async with session_transaction(db):
+        ret = await invoice_service.create_return(db, invoice_id, body, current_user.id)
+    return InvoiceReturnRead.model_validate(ret)

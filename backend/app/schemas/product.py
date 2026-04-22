@@ -1,4 +1,5 @@
 import uuid
+from datetime import date, datetime
 from decimal import Decimal
 
 from pydantic import BaseModel, field_serializer
@@ -66,8 +67,46 @@ class ProductRead(BaseModel):
 
 class StockInRequest(BaseModel):
     quantity: int
-    cost_price: Decimal | None = None  # optionally update cost price
+    cost_price: Decimal | None = None
     notes: str | None = None
+    batch_number: str | None = None
+    expiry_date: date | None = None
+
+
+class ProductBatchRead(BaseModel):
+    id: uuid.UUID
+    batch_number: str | None
+    expiry_date: date | None
+    quantity_remaining: int
+    cost_price: Decimal | None
+    notes: str | None
+    created_at: datetime
+
+    @field_serializer("cost_price")
+    def serialize_decimal(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
+
+    model_config = {"from_attributes": True}
+
+
+class ProductBatchWithProductRead(BaseModel):
+    """Batch record with the parent product's name and SKU — used for the expiry report."""
+    id: uuid.UUID
+    product_id: uuid.UUID
+    product_name: str
+    product_sku: str
+    batch_number: str | None
+    expiry_date: date | None
+    quantity_remaining: int
+    cost_price: Decimal | None
+    notes: str | None
+    created_at: datetime
+
+    @field_serializer("cost_price")
+    def serialize_decimal(self, value: Decimal | None) -> str | None:
+        return str(value) if value is not None else None
+
+    model_config = {"from_attributes": True}
 
 
 class StockAdjustRequest(BaseModel):

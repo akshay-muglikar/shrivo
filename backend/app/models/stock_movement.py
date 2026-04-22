@@ -27,6 +27,9 @@ class StockMovement(Base):
     movement_type: Mapped[str] = mapped_column(String(20))
     quantity_delta: Mapped[int] = mapped_column(Integer)  # positive = in, negative = out
     reference_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
+    batch_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("product_batches.id", ondelete="SET NULL"), nullable=True
+    )
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL")

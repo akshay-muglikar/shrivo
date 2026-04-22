@@ -22,6 +22,15 @@ export interface InvoiceItem {
   quantity: number
   unit_price: string
   line_total: string
+  mrp: string | null
+  batch_number: string | null
+  expiry_date: string | null  // ISO date YYYY-MM-DD
+  cgst_rate: string
+  sgst_rate: string
+  igst_rate: string
+  cgst_amount: string
+  sgst_amount: string
+  igst_amount: string
 }
 
 export interface Invoice {
@@ -40,6 +49,13 @@ export interface Invoice {
   tax_amount: string
   total: string
   notes: string | null
+  is_gst_invoice: boolean
+  supply_type: string
+  place_of_supply: string | null
+  buyer_gstin: string | null
+  total_cgst: string
+  total_sgst: string
+  total_igst: string
   created_at: string
   items: InvoiceItem[]
 }
@@ -58,6 +74,7 @@ export interface InvoiceListItem {
 
 export interface InvoiceItemCreate {
   product_id: string
+  batch_id?: string | null
   quantity: number
   unit_price: number
 }
@@ -71,6 +88,9 @@ export interface InvoiceCreate {
   tax_rate?: number
   payment_method?: string
   notes?: string | null
+  is_gst_invoice?: boolean
+  supply_type?: string
+  place_of_supply?: string | null
   items: InvoiceItemCreate[]
 }
 
@@ -80,8 +100,42 @@ export interface InvoiceUpdate {
   status?: string
 }
 
+export interface InvoiceReturnItemCreate {
+  invoice_item_id: string
+  quantity: number
+}
+
+export interface InvoiceReturnCreate {
+  items: InvoiceReturnItemCreate[]
+  notes?: string | null
+}
+
+export interface InvoiceReturnItemRead {
+  id: string
+  invoice_item_id: string | null
+  product_id: string | null
+  product_name: string
+  batch_number: string | null
+  quantity: number
+}
+
+export interface InvoiceReturnRead {
+  id: string
+  invoice_id: string
+  return_number: string
+  notes: string | null
+  created_at: string
+  items: InvoiceReturnItemRead[]
+}
+
 export const updateInvoice = (id: string, data: InvoiceUpdate) =>
   apiClient.patch<Invoice>(`/invoices/${id}`, data)
+
+export const returnInvoiceItems = (id: string, data: InvoiceReturnCreate) =>
+  apiClient.post<InvoiceReturnRead>(`/invoices/${id}/return`, data)
+
+export const getInvoiceReturns = (id: string) =>
+  apiClient.get<InvoiceReturnRead[]>(`/invoices/${id}/returns`)
 
 export const getInvoices = (params?: Record<string, unknown>) =>
   apiClient.get<PaginatedResponse<InvoiceListItem>>("/invoices", { params })

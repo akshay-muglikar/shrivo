@@ -97,14 +97,7 @@ export function ContactPage() {
 
               <Card className="border-white/10 bg-white/6 text-slate-50 shadow-none">
                 <CardContent className="grid gap-4 p-5 sm:grid-cols-3">
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Email</p>
-                    <p className="text-sm font-medium">akshay.muglikar@gmail.com</p>
-                  </div>
-                  <div className="space-y-1">
-                    <p className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Phone</p>
-                    <p className="text-sm font-medium">+91 8796148014</p>
-                  </div>
+                
                   <div className="space-y-1">
                     <p className="text-[11px] uppercase tracking-[0.2em] text-slate-300">Support window</p>
                     <p className="text-sm font-medium">Daily, 24/7</p>
