@@ -5,6 +5,7 @@ import { LoginForm } from "@/features/auth/components/LoginForm"
 import { CustomersPage } from "@/features/customers/pages/CustomersPage"
 import { ExpensesPage } from "@/features/expenses/pages/ExpensesPage"
 import { ProductsPage } from "@/features/products/pages/ProductsPage"
+import { ExpiryReportPage } from "@/features/products/pages/ExpiryReportPage"
 import { InvoicesPage } from "@/features/invoices/pages/InvoicesPage"
 import { SuppliersPage } from "@/features/suppliers/pages/SuppliersPage"
 import { DashboardPage } from "@/features/dashboard/pages/DashboardPage"
@@ -63,6 +64,7 @@ export const router = createBrowserRouter([
     children: [
       { path: "", element: <HomeRoute /> },
       { path: "products", element: <ProductsPage /> },
+      { path: "expiry", element: <ExpiryReportPage /> },
       { path: "invoices", element: <InvoicesPage /> },
       {
         path: "customers",

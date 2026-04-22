@@ -9,6 +9,8 @@ from app.dependencies import get_current_user
 from app.models.stock_movement import MovementType
 from app.models.user import User
 from app.schemas.product import (
+    ProductBatchRead,
+    ProductBatchWithProductRead,
     ProductCreate,
     ProductRead,
     ProductUpdate,
@@ -68,16 +70,65 @@ async def stock_in(
     current_user: User = Depends(get_current_user),
 ):
     async with session_transaction(db):
-        product = await product_service.adjust_stock(
-            db,
-            product_id=product_id,
-            delta=body.quantity,
-            movement_type=MovementType.STOCK_IN,
-            created_by_id=current_user.id,
-            notes=body.notes,
-            new_cost_price=body.cost_price,
-        )
+        if body.batch_number or body.expiry_date:
+            product, _ = await product_service.create_batch(
+                db,
+                product_id=product_id,
+                quantity=body.quantity,
+                created_by_id=current_user.id,
+                batch_number=body.batch_number,
+                expiry_date=body.expiry_date,
+                cost_price=body.cost_price,
+                notes=body.notes,
+            )
+        else:
+            product = await product_service.adjust_stock(
+                db,
+                product_id=product_id,
+                delta=body.quantity,
+                movement_type=MovementType.STOCK_IN,
+                created_by_id=current_user.id,
+                notes=body.notes,
+                new_cost_price=body.cost_price,
+            )
     return ProductRead.model_validate(product)
+
+
+@router.get("/batches/all", response_model=dict)
+async def list_all_batches(
+    status: str | None = Query(None, pattern="^(expired|expiring_soon|ok)$"),
+    search: str | None = Query(None),
+    page: PageParams = Depends(),
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    rows, total = await product_service.get_all_batches(db, status, search, page.offset, page.limit)
+    items = [
+        ProductBatchWithProductRead(
+            id=batch.id,
+            product_id=batch.product_id,
+            product_name=product.name,
+            product_sku=product.sku,
+            batch_number=batch.batch_number,
+            expiry_date=batch.expiry_date,
+            quantity_remaining=batch.quantity_remaining,
+            cost_price=batch.cost_price,
+            notes=batch.notes,
+            created_at=batch.created_at,
+        )
+        for batch, product in rows
+    ]
+    return {"total": total, "page": page.page, "limit": page.limit, "items": [i.model_dump() for i in items]}
+
+
+@router.get("/{product_id}/batches", response_model=list[ProductBatchRead])
+async def get_batches(
+    product_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    _=Depends(get_current_user),
+):
+    batches = await product_service.get_batches(db, product_id)
+    return [ProductBatchRead.model_validate(b) for b in batches]
 
 
 @router.post("/{product_id}/adjust", response_model=ProductRead)

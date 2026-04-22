@@ -265,7 +265,7 @@ export function AddProductSheet({ open, onOpenChange, product }: Props) {
             </div>
 
             <div className="flex flex-col gap-1.5">
-              <Label htmlFor="selling_price">Selling Price</Label>
+              <Label htmlFor="selling_price">MRP / Selling Price</Label>
               <Input
                 id="selling_price"
                 type="number"
@@ -273,6 +273,7 @@ export function AddProductSheet({ open, onOpenChange, product }: Props) {
                 min="0"
                 {...register("selling_price")}
               />
+            
             </div>
 
             <div className="flex flex-col gap-1.5">

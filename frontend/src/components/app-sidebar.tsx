@@ -15,6 +15,7 @@ import { LayoutDashboard, Package, Receipt, ShoppingCart, Users, Wallet,
   Settings2Icon,
   CircleHelpIcon,
   CommandIcon,
+  CalendarX2,
 } from "lucide-react"
 import { useAuthStore } from "@/features/auth/store/auth.store"
 
@@ -36,6 +37,9 @@ const data = {
     { url: "/app/expenses", title: "Expenses", icon: (<Wallet/>), },
     ...(isOwner ? [{ url: "/app/suppliers", title: "Suppliers", icon: (<ShoppingCart/>), }] : []),
   ] ,
+  navReports: [
+    { url: "/app/expiry", title: "Expiry Report", icon: (<CalendarX2/>), },
+  ],
   navSecondary: [
     {
       title: "Settings",
@@ -72,6 +76,7 @@ const data = {
       </SidebarHeader>
       <SidebarContent>
         <NavMain items={data.navMain} />
+        <NavMain items={data.navReports} title="Reports" />
        
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>

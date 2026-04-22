@@ -51,3 +51,6 @@ class Product(Base):
     movements: Mapped[list["StockMovement"]] = relationship(  # noqa: F821
         "StockMovement", back_populates="product", lazy="select"
     )
+    batches: Mapped[list["ProductBatch"]] = relationship(  # noqa: F821
+        "ProductBatch", back_populates="product", lazy="select"
+    )

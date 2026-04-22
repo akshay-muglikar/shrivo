@@ -1,6 +1,5 @@
 import { useState } from "react"
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { toast } from "sonner"
+import { useQuery } from "@tanstack/react-query"
 import { Button } from "@/components/ui/button"
 import { PaginationControls } from "@/components/pagination-controls"
 import { Input } from "@/components/ui/input"
@@ -14,13 +13,16 @@ import {
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Card, CardContent } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
+import { Badge } from "@/components/ui/badge"
 import { StockBadge } from "../components/StockBadge"
 import { AddProductSheet } from "../components/AddProductSheet"
 import { BulkStockUpdate } from "../components/BulkStockUpdate"
-import { getProducts, stockIn, type Product } from "../api/products.api"
+import { StockInSheet } from "../components/StockInSheet"
+import { ProductDetailSheet } from "../components/ProductDetailSheet"
+import { getProducts, getBatches, type Product } from "../api/products.api"
 import { getInvoiceSettings } from "@/features/invoices/utils/invoiceSettings"
 import { currency } from "@/lib/formatters"
-import { Pencil, ScanBarcode, Plus } from "lucide-react"
+import { Pencil, ScanBarcode, Plus, AlertTriangle } from "lucide-react"
 
 const SORT_OPTIONS = [
   { value: "name_asc", label: "Name A→Z" },
@@ -57,13 +59,40 @@ function PriceCell({ p }: { p: Product }) {
   )
 }
 
+function NearExpiryIndicator({ productId }: { productId: string }) {
+  const { data: batches } = useQuery({
+    queryKey: ["product-batches", productId],
+    queryFn: () => getBatches(productId).then((r) => r.data),
+    staleTime: 60_000,
+  })
+
+  if (!batches) return null
+
+  const now = new Date()
+  const hasExpired = batches.some(
+    (b) => b.quantity_remaining > 0 && b.expiry_date && new Date(b.expiry_date) < now
+  )
+  const hasSoon = !hasExpired && batches.some((b) => {
+    if (b.quantity_remaining <= 0 || !b.expiry_date) return false
+    const days = Math.ceil((new Date(b.expiry_date).getTime() - now.getTime()) / 86400000)
+    return days <= 30
+  })
+
+  if (hasExpired)
+    return <Badge variant="destructive" className="text-[10px] py-0 px-1.5 gap-1"><AlertTriangle className="size-2.5" />Expired</Badge>
+  if (hasSoon)
+    return <Badge variant="outline" className="text-[10px] py-0 px-1.5 gap-1 border-amber-400 text-amber-700 bg-amber-50"><AlertTriangle className="size-2.5" />Expiring</Badge>
+  return null
+}
+
 export function ProductsPage() {
-  const qc = useQueryClient()
   const [search, setSearch] = useState("")
   const [lowStock, setLowStock] = useState(false)
   const [sortBy, setSortBy] = useState("name_asc")
   const [addOpen, setAddOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+  const [stockInProduct, setStockInProduct] = useState<Product | null>(null)
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
 
@@ -77,12 +106,6 @@ export function ProductsPage() {
     }).then((r) => r.data),
   })
 
-  const stockInMutation = useMutation({
-    mutationFn: ({ id, qty }: { id: string; qty: number }) => stockIn(id, qty),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["products"] }); toast.success("Stock updated") },
-    onError: () => toast.error("Failed to update stock"),
-  })
-
   return (
     <>
       <AddProductSheet
@@ -92,6 +115,16 @@ export function ProductsPage() {
           if (!open) setEditingProduct(null)
         }}
         product={editingProduct}
+      />
+      <StockInSheet
+        product={stockInProduct}
+        open={!!stockInProduct}
+        onOpenChange={(open) => { if (!open) setStockInProduct(null) }}
+      />
+      <ProductDetailSheet
+        product={detailProduct}
+        open={!!detailProduct}
+        onOpenChange={(open) => { if (!open) setDetailProduct(null) }}
       />
 
       <Tabs defaultValue="products" className="p-4 sm:p-6 gap-4">
@@ -166,9 +199,12 @@ export function ProductsPage() {
                     </TableRow>
                   )}
                   {data?.items.map((p) => (
-                    <TableRow key={p.id}>
+                    <TableRow key={p.id} className="cursor-pointer" onClick={() => setDetailProduct(p)}>
                       <TableCell>
-                        <div className="font-medium">{p.name}</div>
+                        <div className="font-medium flex items-center gap-2">
+                          {p.name}
+                          <NearExpiryIndicator productId={p.id} />
+                        </div>
                         <div className="text-xs text-muted-foreground font-mono sm:hidden">{p.sku}</div>
                         <div className="text-xs text-muted-foreground sm:hidden"><PriceCell p={p} /></div>
                       </TableCell>
@@ -183,7 +219,8 @@ export function ProductsPage() {
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => {
+                            onClick={(e) => {
+                              e.stopPropagation()
                               setEditingProduct(p)
                               setAddOpen(true)
                             }}
@@ -191,10 +228,10 @@ export function ProductsPage() {
                             <Pencil className="size-3.5 sm:mr-1.5" />
                             <span className="hidden sm:inline">Edit</span>
                           </Button>
-                          <Button variant="outline" size="sm" disabled={stockInMutation.isPending}
-                            onClick={() => {
-                              const qty = Number(prompt(`Stock in quantity for ${p.name}:`))
-                              if (qty > 0) stockInMutation.mutate({ id: p.id, qty })
+                          <Button variant="outline" size="sm"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              setStockInProduct(p)
                             }}>
                             <span className="hidden sm:inline">Stock In</span>
                             <span className="sm:hidden">Add</span>

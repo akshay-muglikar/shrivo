@@ -625,8 +625,8 @@ export function SettingsPage() {
                 Save GST Info
               </Button>
               <div className="rounded-lg bg-muted/50 border p-3 text-[11px] text-muted-foreground space-y-1">
-                <p className="font-medium text-foreground text-xs">Phase 1 behaviour</p>
-                <p>Tax rate entered on the invoice is split 50/50 into CGST + SGST (intra-state). Full per-item HSN codes and IGST support come in Phase 2–3.</p>
+                <p className="font-medium text-foreground text-xs">How GST works</p>
+                <p>When creating an invoice, enable "GST Invoice" to snapshot CGST/SGST or IGST amounts per item. Products must have an HSN code and GST rate set. Select Place of Supply to determine intra-state vs inter-state tax.</p>
               </div>
             </div>
           )}

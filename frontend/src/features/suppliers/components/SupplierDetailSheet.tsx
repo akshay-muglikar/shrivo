@@ -19,7 +19,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { currency, date } from "@/lib/formatters"
 import {
   getPurchaseOrders,
-  receivePurchaseOrder,
+  getSupplierReturns,
   updatePurchaseOrder,
   deletePurchaseOrder,
   recordPayment,
@@ -27,10 +27,14 @@ import {
   bulkReceivePOs,
   bulkCancelPOs,
   type PurchaseOrderListItem,
+  type SupplierReturn,
 } from "../api/purchase_orders.api"
 import { getSupplier, type Supplier } from "../api/suppliers.api"
 import { SupplierSheet } from "./SupplierSheet"
 import { CreatePOSheet } from "./CreatePOSheet"
+import { ReceivePODialog } from "./ReceivePODialog"
+import { CreateSupplierReturnSheet } from "./CreateSupplierReturnSheet"
+import { PurchaseOrderDetailSheet } from "./PurchaseOrderDetailSheet"
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   received: "default",
@@ -49,6 +53,9 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
   const qc = useQueryClient()
   const [editOpen, setEditOpen] = useState(false)
   const [createPOOpen, setCreatePOOpen] = useState(false)
+  const [createReturnOpen, setCreateReturnOpen] = useState(false)
+  const [receivePOId, setReceivePOId] = useState<string | null>(null)
+  const [detailPOId, setDetailPOId] = useState<string | null>(null)
   const [paymentAmount, setPaymentAmount] = useState("")
   const [paymentNotes, setPaymentNotes] = useState("")
   const [selectedPOs, setSelectedPOs] = useState<Set<string>>(new Set())
@@ -75,19 +82,10 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
     enabled: !!supplier?.id && open,
   })
 
-  const receiveMutation = useMutation({
-    mutationFn: receivePurchaseOrder,
-    onSuccess: () => {
-      toast.success("Purchase order received — stock & balance updated")
-      qc.invalidateQueries({ queryKey: ["purchase-orders"] })
-      qc.invalidateQueries({ queryKey: ["supplier", supplier?.id] })
-      qc.invalidateQueries({ queryKey: ["suppliers"] })
-      qc.invalidateQueries({ queryKey: ["products"] })
-    },
-    onError: (err: unknown) => {
-      const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      toast.error(msg ?? "Failed to receive order")
-    },
+  const { data: supplierReturns = [] } = useQuery({
+    queryKey: ["supplier-returns", supplier?.id],
+    queryFn: () => getSupplierReturns(supplier!.id).then((r) => r.data),
+    enabled: !!supplier?.id && open,
   })
 
   const cancelMutation = useMutation({
@@ -171,8 +169,34 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
   return (
     <>
       <SupplierSheet open={editOpen} onOpenChange={setEditOpen} supplier={s} />
+      <ReceivePODialog
+        poId={receivePOId}
+        supplierId={s.id}
+        open={!!receivePOId}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setReceivePOId(null)
+        }}
+      />
+      <PurchaseOrderDetailSheet
+        poId={detailPOId}
+        open={!!detailPOId}
+        onOpenChange={(nextOpen) => {
+          if (!nextOpen) setDetailPOId(null)
+        }}
+        onReceiveGRN={(poId) => {
+          setDetailPOId(null)
+          setReceivePOId(poId)
+        }}
+        onCancelPO={(poId) => {
+          cancelMutation.mutate(poId)
+        }}
+        isCancelling={cancelMutation.isPending}
+      />
       {createPOOpen && (
         <CreatePOSheet open={createPOOpen} onOpenChange={setCreatePOOpen} supplier={s} />
+      )}
+      {createReturnOpen && (
+        <CreateSupplierReturnSheet open={createReturnOpen} onOpenChange={setCreateReturnOpen} supplier={s} />
       )}
 
       <Sheet open={open} onOpenChange={onOpenChange}>
@@ -208,6 +232,7 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
           <Tabs defaultValue="orders" className="mt-4">
             <TabsList className="mx-4">
               <TabsTrigger value="orders">Purchase Orders</TabsTrigger>
+              <TabsTrigger value="returns">Returns</TabsTrigger>
               <TabsTrigger value="account">Account</TabsTrigger>
               <TabsTrigger value="info">Info</TabsTrigger>
             </TabsList>
@@ -265,11 +290,12 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
                     {pos.map((po) => {
                       const isActionable = po.status === "draft" || po.status === "ordered"
                       return (
-                        <TableRow key={po.id}>
+                        <TableRow key={po.id} className="cursor-pointer" onClick={() => setDetailPOId(po.id)}>
                           <TableCell>
                             <Checkbox
                               checked={selectedPOs.has(po.id)}
                               disabled={!isActionable}
+                              onClick={(e) => e.stopPropagation()}
                               onCheckedChange={(checked) => {
                                 setSelectedPOs((prev) => {
                                   const next = new Set(prev)
@@ -297,11 +323,13 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
                                   size="sm"
                                   variant="outline"
                                   className="h-7 text-xs"
-                                  onClick={() => receiveMutation.mutate(po.id)}
-                                  disabled={receiveMutation.isPending}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    setReceivePOId(po.id)
+                                  }}
                                 >
                                   <PackageCheck className="size-3 mr-1" />
-                                  Receive
+                                  Receive GRN
                                 </Button>
                               )}
                               {isActionable && (
@@ -310,7 +338,10 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
                                   variant="ghost"
                                   className="size-7 text-muted-foreground hover:text-orange-500"
                                   title="Cancel"
-                                  onClick={() => cancelMutation.mutate(po.id)}
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    cancelMutation.mutate(po.id)
+                                  }}
                                   disabled={cancelMutation.isPending}
                                 >
                                   <X className="size-3.5" />
@@ -322,7 +353,8 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
                                   variant="ghost"
                                   className="size-7 text-muted-foreground hover:text-destructive"
                                   title="Delete"
-                                  onClick={() => {
+                                  onClick={(e) => {
+                                    e.stopPropagation()
                                     if (!confirm(`Delete ${po.po_number}?`)) return
                                     deleteMutation.mutate(po.id)
                                   }}
@@ -352,7 +384,7 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
                     disabled={bulkReceiveMutation.isPending || bulkCancelMutation.isPending}
                   >
                     <PackageCheck className="size-3.5 mr-1" />
-                    Receive All
+                    Quick Receive All
                   </Button>
                   <Button
                     size="sm"
@@ -372,6 +404,55 @@ export function SupplierDetailSheet({ supplier, open, onOpenChange }: Props) {
                   </Button>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="returns" className="px-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-sm text-muted-foreground">
+                  {supplierReturns.length} return{supplierReturns.length !== 1 ? "s" : ""}
+                </span>
+                <Button size="sm" onClick={() => setCreateReturnOpen(true)}>
+                  <Plus className="size-4" />
+                  New Return
+                </Button>
+              </div>
+
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Return #</TableHead>
+                      <TableHead className="hidden sm:table-cell">Credit Note</TableHead>
+                      <TableHead>Items</TableHead>
+                      <TableHead>Total</TableHead>
+                      <TableHead className="hidden sm:table-cell">Date</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {supplierReturns.map((ret: SupplierReturn) => (
+                      <TableRow key={ret.id}>
+                        <TableCell className="font-mono font-medium text-sm">{ret.return_number}</TableCell>
+                        <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                          {ret.supplier_credit_note_no ?? "-"}
+                        </TableCell>
+                        <TableCell>{ret.items.length}</TableCell>
+                        <TableCell className="font-medium">{currency(ret.total_amount)}</TableCell>
+                        <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+                          {date(ret.created_at)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+
+                    {supplierReturns.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                          No supplier returns yet.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                  </TableBody>
+                </Table>
+              </div>
             </TabsContent>
 
             {/* ── Account tab ── */}

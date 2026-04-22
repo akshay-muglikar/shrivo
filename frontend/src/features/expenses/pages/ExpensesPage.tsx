@@ -20,7 +20,7 @@ export function ExpensesPage() {
   const [editingExpense, setEditingExpense] = useState<Expense | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
-  const [datePreset, setDatePreset] = useState<DatePreset>("all")
+  const [datePreset, setDatePreset] = useState<DatePreset>("today")
   const [customStartDate, setCustomStartDate] = useState("")
   const [customEndDate, setCustomEndDate] = useState(toDateInput(new Date()))
 

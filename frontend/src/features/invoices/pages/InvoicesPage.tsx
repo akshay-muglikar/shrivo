@@ -1,11 +1,12 @@
 import { useState } from "react"
 import { useQuery } from "@tanstack/react-query"
-import { Download, Pencil, Plus, Printer } from "lucide-react"
+import { ChevronDown, ChevronUp, Download, Pencil, Plus, Printer } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { PaginationControls } from "@/components/pagination-controls"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
+import { Label } from "@/components/ui/label"
 import {
   Select,
   SelectContent,
@@ -22,6 +23,8 @@ import { InvoiceSuccessDialog } from "../components/InvoiceSuccessDialog"
 import { printInvoice, downloadInvoicePdf } from "../utils/printInvoice"
 import { getInvoiceSettings } from "../utils/invoiceSettings"
 import { shareInvoiceViaWhatsApp } from "../utils/whatsappShare"
+import { getBatches, getProducts } from "@/features/products/api/products.api"
+import { toast } from "sonner"
 import { currency, date } from "@/lib/formatters"
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive"> = {
@@ -34,6 +37,8 @@ const paymentLabel: Record<string, string> = {
   cash: "Cash", upi: "UPI", card: "Card", credit: "Credit",
 }
 
+const QUICK_BATCH_AUTO = "__auto_batch__"
+
 export function InvoicesPage() {
   const [search, setSearch] = useState("")
   const [createOpen, setCreateOpen] = useState(false)
@@ -41,9 +46,21 @@ export function InvoicesPage() {
   const [createdInvoice, setCreatedInvoice] = useState<Invoice | null>(null)
   const [page, setPage] = useState(1)
   const [limit, setLimit] = useState(20)
-  const [datePreset, setDatePreset] = useState<DatePreset>("all")
+  const [datePreset, setDatePreset] = useState<DatePreset>("today")
   const [customStartDate, setCustomStartDate] = useState("")
   const [customEndDate, setCustomEndDate] = useState(toDateInput(new Date()))
+  const [quickSearch, setQuickSearch] = useState("")
+  const [isQuickSearchMinimized, setIsQuickSearchMinimized] = useState(false)
+  const [quickQty, setQuickQty] = useState("1")
+  const [selectedQuickProductId, setSelectedQuickProductId] = useState<string | null>(null)
+  const [selectedQuickBatchId, setSelectedQuickBatchId] = useState(QUICK_BATCH_AUTO)
+  const [quickAddCounter, setQuickAddCounter] = useState(0)
+  const [quickAddRequest, setQuickAddRequest] = useState<{
+    requestId: number
+    productId: string
+    quantity: number
+    batchId?: string | null
+  } | null>(null)
 
   const { startDate, endDate } = resolveDateRange(datePreset, customStartDate, customEndDate)
 
@@ -57,6 +74,29 @@ export function InvoicesPage() {
       limit,
     }).then((r) => r.data),
   })
+
+  const { data: products = { items: [] } } = useQuery({
+    queryKey: ["invoice-quick-products"],
+    queryFn: () => getProducts({ limit: 500 }).then((r) => r.data),
+    enabled: createOpen,
+  })
+
+  const quickProducts = products.items
+    .filter((p) => p.is_active)
+    .filter((p) => {
+      const term = quickSearch.trim().toLowerCase()
+      if (!term) return true
+      return p.name.toLowerCase().includes(term) || p.sku.toLowerCase().includes(term)
+    })
+  const selectedQuickProduct = quickProducts.find((p) => p.id === selectedQuickProductId)
+
+  const { data: selectedProductBatches = [] } = useQuery({
+    queryKey: ["invoice-quick-product-batches", selectedQuickProductId],
+    queryFn: () => getBatches(selectedQuickProductId!).then((r) => r.data),
+    enabled: createOpen && !!selectedQuickProductId,
+    staleTime: 60_000,
+  })
+  const activeQuickBatches = selectedProductBatches.filter((b) => b.quantity_remaining > 0)
 
   async function fetchAndOpen(row: InvoiceListItem) {
     const res = await getInvoice(row.id)
@@ -89,6 +129,7 @@ export function InvoicesPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreated={(inv) => setCreatedInvoice(inv)}
+        quickAddRequest={quickAddRequest}
       />
       <EditInvoiceSheet
         invoice={selectedInvoice}
@@ -99,6 +140,138 @@ export function InvoicesPage() {
         open={!!createdInvoice}
         onClose={() => setCreatedInvoice(null)}
       />
+
+      {createOpen && (
+        <div
+          className={`hidden xl:block fixed z-[60] ${
+            isQuickSearchMinimized
+              ? "bottom-0 left-72 right-[min(64rem,50vw)]"
+              : "top-16 bottom-4 left-72 right-[min(64rem,50vw)] pr-4"
+          }`}
+        >
+          <Card className={isQuickSearchMinimized ? "rounded-b-none rounded-t-lg overflow-hidden border-b-0" : "h-full overflow-hidden"}>
+            <CardContent className={isQuickSearchMinimized ? "py-2 px-4" : "h-full p-4 flex flex-col gap-3"}>
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <p className="text-sm font-semibold">Quick Product Search</p>
+                  {!isQuickSearchMinimized && (
+                    <p className="text-xs text-muted-foreground">Tap product, set qty, add to current invoice.</p>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setIsQuickSearchMinimized((v) => !v)}
+                  className="h-8"
+                >
+                  {isQuickSearchMinimized ? <ChevronUp className="size-3.5" /> : <ChevronDown className="size-3.5" />}
+                  {isQuickSearchMinimized ? "Expand" : "Minimize"}
+                </Button>
+              </div>
+
+              {!isQuickSearchMinimized && (
+                <>
+                  <Input
+                    placeholder="Search product name or SKU..."
+                    value={quickSearch}
+                    onChange={(e) => setQuickSearch(e.target.value)}
+                  />
+
+                  {selectedQuickProduct && (
+                    <div className="rounded-lg border bg-muted/30 p-3 space-y-2">
+                      <p className="text-sm font-medium truncate">{selectedQuickProduct.name}</p>
+                      {activeQuickBatches.length > 0 && (
+                        <div className="space-y-1">
+                          <Label htmlFor="quick_batch_select" className="text-xs">Batch</Label>
+                          <select
+                            id="quick_batch_select"
+                            value={selectedQuickBatchId}
+                            onChange={(e) => setSelectedQuickBatchId(e.target.value)}
+                            className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm outline-none ring-offset-background focus-visible:ring-2 focus-visible:ring-ring"
+                          >
+                            <option value={QUICK_BATCH_AUTO}>Auto (FEFO)</option>
+                            {activeQuickBatches.map((b) => (
+                              <option key={b.id} value={b.id}>
+                                {b.batch_number ? `Batch ${b.batch_number}` : "No batch no."}
+                                {b.expiry_date
+                                  ? ` · Exp ${new Date(b.expiry_date).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" })}`
+                                  : ""}
+                                {` · ${b.quantity_remaining} left`}
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-[1fr_auto] gap-2 items-end">
+                        <div className="space-y-1">
+                          <Label htmlFor="quick_add_qty_outside" className="text-xs">Qty</Label>
+                          <Input
+                            id="quick_add_qty_outside"
+                            type="number"
+                            min="1"
+                            value={quickQty}
+                            onChange={(e) => setQuickQty(e.target.value)}
+                          />
+                        </div>
+                        <Button
+                          onClick={() => {
+                            if (!selectedQuickProductId) return
+                            const qty = parseInt(quickQty || "0") || 0
+                            if (qty <= 0) {
+                              toast.error("Enter a valid quantity")
+                              return
+                            }
+                            const requestId = quickAddCounter + 1
+                            setQuickAddCounter(requestId)
+                            setQuickAddRequest({
+                              requestId,
+                              productId: selectedQuickProductId,
+                              quantity: qty,
+                              batchId: selectedQuickBatchId === QUICK_BATCH_AUTO ? null : selectedQuickBatchId,
+                            })
+                            setSelectedQuickProductId(null)
+                            setSelectedQuickBatchId(QUICK_BATCH_AUTO)
+                            setQuickQty("1")
+                          }}
+                        >
+                          Add
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex-1 overflow-y-auto space-y-2 pr-1">
+                    {quickProducts.slice(0, 100).map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedQuickProductId(p.id)
+                          setSelectedQuickBatchId(QUICK_BATCH_AUTO)
+                          setQuickQty("1")
+                        }}
+                        className="w-full rounded-lg border bg-card p-2.5 text-left transition-colors hover:bg-muted"
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-medium">{p.name}</p>
+                            <p className="truncate text-xs text-muted-foreground">{p.sku}</p>
+                          </div>
+                          <span className="text-xs text-muted-foreground">{p.current_stock}</span>
+                        </div>
+                      </button>
+                    ))}
+                    {quickProducts.length === 0 && (
+                      <p className="text-center text-xs text-muted-foreground py-6">No products found.</p>
+                    )}
+                  </div>
+                </>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
       <div className="p-4 sm:p-6 space-y-4">
         <div className="flex items-center justify-between gap-2">
