@@ -112,8 +112,6 @@ const faqs = [
 ]
 
 const contactDetails = [
-  { icon: Phone, label: "Sales Support", value: "+91 8796148014" },
-  { icon: Mail, label: "Email", value: "akshay.muglikar@gmail.com" },
   { icon: Store, label: "Best Fit", value: "Retail stores and counters" },
 ]
 
@@ -189,7 +187,7 @@ export function LandingPage() {
                       <feature.icon className="size-5" />
                     </div>
                     <div>
-                      <h2 className="text-sm font-semibold tracking-tight">{feature.title}</h2>
+                      <h2 className="text-sm font-semibold tracking-tight text-slate-950">{feature.title}</h2>
                       <p className="mt-1 text-sm leading-6 text-muted-foreground">{feature.description}</p>
                     </div>
                   </CardContent>
@@ -309,7 +307,7 @@ export function LandingPage() {
                       <ChevronRight className="size-4 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="text-xl font-semibold tracking-tight">{item.title}</h3>
+                      <h3 className="text-xl font-semibold tracking-tight text-slate-950">{item.title}</h3>
                       <p className="mt-2 text-sm leading-6 text-muted-foreground">{item.description}</p>
                     </div>
                   </CardContent>
