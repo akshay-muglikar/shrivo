@@ -129,12 +129,14 @@ export function LandingPage() {
               <p className="text-xs text-muted-foreground">Retail billing and inventory</p>
             </div>
           </div>
-          <div className="hidden items-center gap-2 sm:flex">
+          <div className="flex items-center gap-1 sm:gap-2">
             <Link to="/contact">
-              <Button variant="ghost" size="sm">Contact</Button>
+              <Button variant="ghost" size="sm" className="px-2 sm:px-3">Contact</Button>
             </Link>
             <Link to="/login">
-              <Button size="sm">Sign In <ArrowRight className="size-3.5" /></Button>
+              <Button size="sm" className="px-2 sm:px-3">
+                Sign In <ArrowRight className="size-3.5" />
+              </Button>
             </Link>
           </div>
         </div>
