@@ -6,8 +6,6 @@ import {
   CheckCircle2,
   ChevronRight,
   CircleHelp,
-  Mail,
-  Phone,
   Receipt,
   ShieldCheck,
   Smartphone,
